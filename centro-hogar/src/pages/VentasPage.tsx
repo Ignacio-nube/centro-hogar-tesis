@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Download, Banknote, CreditCard, ArrowLeftRight } from 'lucide-react'
+import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, List } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import { Button } from '@/components/ui/button'
@@ -16,55 +16,78 @@ import type { Venta, CartItem } from '@/types/app.types'
 
 const ESTADO_BADGE: Record<string, string> = {
   completada: 'bg-green-100 text-green-700 border border-green-200',
-  pendiente: 'bg-zinc-100 text-zinc-500 border border-zinc-200',
-  cancelada: 'bg-red-100 text-red-600 border border-red-200',
+  pendiente:  'bg-zinc-100 text-zinc-500 border border-zinc-200',
+  cancelada:  'bg-red-100 text-red-600 border border-red-200',
 }
 
 const METODO_LABEL: Record<string, string> = {
-  efectivo: 'Efectivo',
-  tarjeta: 'Tarjeta',
+  efectivo:      'Efectivo',
+  tarjeta:       'Tarjeta',
   transferencia: 'Transf.',
 }
 
 const METODO_ICON: Record<string, React.ElementType> = {
-  efectivo: Banknote,
-  tarjeta: CreditCard,
+  efectivo:      Banknote,
+  tarjeta:       CreditCard,
   transferencia: ArrowLeftRight,
 }
 
 function ventaItemsToCartItems(venta: Venta): CartItem[] {
   return (venta.items ?? []).map((item) => ({
-    producto: item.producto ?? { id: item.producto_id, codigo: '', nombre: 'Producto', precio_venta: item.precio_unitario, descripcion: null, categoria_id: null, categoria: undefined, precio_costo: 0, stock_actual: 0, stock_minimo: 0, imagen_url: null, activo: true, created_at: '', updated_at: '' },
+    producto: item.producto ?? {
+      id: item.producto_id,
+      codigo: '',
+      nombre: 'Producto',
+      precio_venta: item.precio_unitario,
+      descripcion: null,
+      categoria_id: null,
+      categoria: undefined,
+      precio_costo: 0,
+      stock_actual: 0,
+      stock_minimo: 0,
+      imagen_url: null,
+      activo: true,
+      created_at: '',
+      updated_at: '',
+    },
     cantidad: item.cantidad,
     precio_unitario: item.precio_unitario,
     subtotal: item.subtotal,
   }))
 }
 
+const PAGE_SIZE_DEFAULT  = 5
+const PAGE_SIZE_EXPANDED = 10
+
 export default function VentasPage() {
   const { can } = usePermissions()
   const navigate = useNavigate()
   const canWrite = can('ventas.write')
-  const [page, setPage] = useState(1)
-  const [estado, setEstado] = useState('')
+
+  const [page, setPage]           = useState(1)
+  const [estado, setEstado]       = useState('')
   const [metodoPago, setMetodoPago] = useState('')
   const [vendedorId, setVendedorId] = useState('')
-  const PAGE_SIZE = 20
+  const [verTodos, setVerTodos]   = useState(false)
+
+  const pageSize = verTodos ? PAGE_SIZE_EXPANDED : PAGE_SIZE_DEFAULT
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['ventas', page, estado, metodoPago, vendedorId],
-    queryFn: () => ventasService.list({
-      page,
-      pageSize: PAGE_SIZE,
-      estado: estado || undefined,
-      metodoPago: metodoPago || undefined,
-      vendedorId: vendedorId || undefined,
-    }),
+    queryKey: ['ventas', page, pageSize, estado, metodoPago, vendedorId],
+    queryFn: () =>
+      ventasService.list({
+        page,
+        pageSize,
+        estado:     estado     || undefined,
+        metodoPago: metodoPago || undefined,
+        vendedorId: vendedorId || undefined,
+      }),
   })
 
   const { data: usuarios } = useQuery({
     queryKey: ['ventas-vendedores'],
     queryFn: () => ventasService.listVendedores(),
+    staleTime: 1000 * 60 * 10,
   })
 
   const columns: Column<Venta>[] = [
@@ -140,11 +163,14 @@ export default function VentasPage() {
     },
   ]
 
+  const totalCount = data?.count ?? 0
+  const hayMas = page * pageSize < totalCount
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Ventas"
-        description={`${data?.count ?? 0} ventas registradas`}
+        description={`${totalCount} ventas registradas`}
         action={
           canWrite ? (
             <Button render={<Link to="/ventas/nueva" />} nativeButton={false}>
@@ -155,11 +181,11 @@ export default function VentasPage() {
         }
       />
 
-      {/* Filters */}
+      {/* Filtros */}
       <div className="flex items-center gap-2 flex-wrap">
         <Select
           value={vendedorId || 'all'}
-          onValueChange={(v) => { setVendedorId((v as string) === 'all' ? '' : (v as string)); setPage(1) }}
+          onValueChange={(v) => { setVendedorId(v === 'all' ? '' : v); setPage(1) }}
         >
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Todos los vendedores" />
@@ -171,9 +197,10 @@ export default function VentasPage() {
             ))}
           </SelectContent>
         </Select>
+
         <Select
           value={estado || 'all'}
-          onValueChange={(v) => { setEstado((v as string) === 'all' ? '' : (v as string)); setPage(1) }}
+          onValueChange={(v) => { setEstado(v === 'all' ? '' : v); setPage(1) }}
         >
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Todos los estados" />
@@ -184,9 +211,10 @@ export default function VentasPage() {
             <SelectItem value="cancelada">Cancelada</SelectItem>
           </SelectContent>
         </Select>
+
         <Select
           value={metodoPago || 'all'}
-          onValueChange={(v) => { setMetodoPago((v as string) === 'all' ? '' : (v as string)); setPage(1) }}
+          onValueChange={(v) => { setMetodoPago(v === 'all' ? '' : v); setPage(1) }}
         >
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Todos los métodos" />
@@ -198,6 +226,28 @@ export default function VentasPage() {
             <SelectItem value="transferencia">Transferencia</SelectItem>
           </SelectContent>
         </Select>
+
+        {!verTodos && totalCount > PAGE_SIZE_DEFAULT && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => { setVerTodos(true); setPage(1) }}
+          >
+            <List className="size-3.5 mr-1.5" />
+            Ver todos
+          </Button>
+        )}
+        {verTodos && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-muted-foreground"
+            onClick={() => { setVerTodos(false); setPage(1) }}
+          >
+            Mostrar menos
+          </Button>
+        )}
       </div>
 
       {isError ? (
@@ -213,11 +263,12 @@ export default function VentasPage() {
         />
       )}
 
-      {data && data.count > PAGE_SIZE && (
+      {/* Paginación */}
+      {totalCount > pageSize && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Mostrando {Math.min((page - 1) * PAGE_SIZE + 1, data.count)}–
-            {Math.min(page * PAGE_SIZE, data.count)} de {data.count}
+            Mostrando {Math.min((page - 1) * pageSize + 1, totalCount)}–
+            {Math.min(page * pageSize, totalCount)} de {totalCount}
           </span>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
@@ -226,7 +277,7 @@ export default function VentasPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={page * PAGE_SIZE >= data.count}
+              disabled={!hayMas}
               onClick={() => setPage(page + 1)}
             >
               Siguiente
@@ -238,9 +289,9 @@ export default function VentasPage() {
   )
 }
 
-// Lazy ticket download button — fetches full venta with items on first click
+// ─── Lazy ticket download button ──────────────────────────────────────────────
 function TicketDownloadButton({ venta }: { venta: Venta }) {
-  const [ready, setReady] = useState(false)
+  const [ready, setReady]       = useState(false)
   const [ventaFull, setVentaFull] = useState<Venta | null>(null)
 
   async function loadAndDownload(e: React.MouseEvent) {

@@ -14,15 +14,45 @@ export const usuariosService = {
     return rows as Array<{ id: number; nombre: string; apellido: string }>
   },
 
-  async list(): Promise<Usuario[]> {
+  async list(opts?: {
+    search?: string
+    page?: number
+    pageSize?: number
+  }): Promise<{ data: Usuario[]; count: number }> {
+    const page     = Math.max(1, opts?.page     ?? 1)
+    const pageSize = Math.min(100, opts?.pageSize ?? 10)
+    const offset   = (page - 1) * pageSize
+    const search   = opts?.search?.trim() ?? ''
+
+    const whereClauses: string[] = []
+    const params: (string | number)[] = []
+
+    if (search) {
+      whereClauses.push(
+        `(u.nombre LIKE ? OR u.apellido LIKE ? OR u.email LIKE ?)`
+      )
+      const like = `%${search}%`
+      params.push(like, like, like)
+    }
+
+    const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : ''
+
+    const [[{ total }]] = await pool.execute<any[]>(
+      `SELECT COUNT(*) AS total FROM usuarios u ${where}`,
+      params
+    )
+
     const [rows] = await pool.execute<any[]>(
       `SELECT u.id, u.nombre, u.apellido, u.email, u.rol_id, r.nombre AS rol,
               u.activo, u.created_at, u.updated_at
        FROM usuarios u
        JOIN roles r ON r.id = u.rol_id
-       ORDER BY u.created_at DESC`
+       ${where}
+       ORDER BY u.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset]
     )
-    return rows as Usuario[]
+    return { data: rows as Usuario[], count: Number(total) }
   },
 
   async getById(id: number): Promise<Usuario | null> {

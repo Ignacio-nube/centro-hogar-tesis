@@ -62,9 +62,20 @@ export const authService = {
     return normalizeProfile(updated)
   },
 
-  async listUsers(): Promise<Profile[]> {
-    const users = await api.get<any[]>('/usuarios')
-    return users.map(normalizeProfile)
+  async listUsers(opts?: {
+    search?: string
+    page?: number
+    pageSize?: number
+  }): Promise<{ data: Profile[]; count: number }> {
+    const params = new URLSearchParams()
+    if (opts?.search)   params.set('search',   opts.search)
+    if (opts?.page)     params.set('page',     String(opts.page))
+    if (opts?.pageSize) params.set('pageSize', String(opts.pageSize))
+    const qs = params.toString()
+    const result = await api.get<{ data: any[]; count: number }>(
+      `/usuarios${qs ? `?${qs}` : ''}`
+    )
+    return { data: result.data.map(normalizeProfile), count: result.count }
   },
 
   async changePassword(userId: string, newPassword: string): Promise<void> {

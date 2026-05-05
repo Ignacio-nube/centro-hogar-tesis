@@ -1,6 +1,9 @@
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, TrendingUp, ShoppingCart, CreditCard, Banknote, ArrowLeftRight, Download, Sheet } from 'lucide-react'
+import {
+  FileText, TrendingUp, ShoppingCart, CreditCard, Banknote, ArrowLeftRight, Download, Sheet,
+  Calendar, CalendarDays, CalendarRange,
+} from 'lucide-react'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,18 +12,20 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/PageHeader'
-import { DataTable, type Column } from '@/components/common/DataTable'
 import { ReporteVentasPDF } from '@/features/reportes/pdf/ReporteVentasPDF'
 import { ReporteStockPDF } from '@/features/reportes/pdf/ReporteStockPDF'
-import { ventasService } from '@/features/ventas/services/ventasService'
+import { reportesService } from '@/features/reportes/services/reportesService'
 import { productosService } from '@/features/productos/services/productosService'
 import { downloadBackupExcel } from '@/features/backup/backupService'
-import { formatCurrency, formatDate } from '@/lib/utils'
-import { format, startOfMonth } from 'date-fns'
+import { formatCurrency } from '@/lib/utils'
+import {
+  format, startOfMonth, startOfWeek, subDays, subMonths,
+  startOfDay, endOfDay,
+} from 'date-fns'
 import { QueryErrorState } from '@/components/ui/query-error-state'
-import type { Venta } from '@/types/app.types'
+
+// ─── Tipos internos ───────────────────────────────────────────────────────────
 
 const METODO_LABEL: Record<string, string> = {
   efectivo: 'Efectivo',
@@ -33,6 +38,67 @@ const METODO_ICON: Record<string, React.ElementType> = {
   tarjeta: CreditCard,
   transferencia: ArrowLeftRight,
 }
+
+// ─── Perfiles de período ──────────────────────────────────────────────────────
+
+type PerfilId = 'hoy' | 'semana' | '7dias' | 'mes' | 'mesAnterior' | 'personalizado'
+
+interface Perfil {
+  id: PerfilId
+  label: string
+  icon: React.ElementType
+  getRange: () => { desde: string; hasta: string }
+}
+
+const hoy = () => new Date()
+const fmt = (d: Date) => format(d, 'yyyy-MM-dd')
+
+const PERFILES: Perfil[] = [
+  {
+    id: 'hoy',
+    label: 'Hoy',
+    icon: Calendar,
+    getRange: () => ({ desde: fmt(hoy()), hasta: fmt(hoy()) }),
+  },
+  {
+    id: 'semana',
+    label: 'Esta semana',
+    icon: CalendarDays,
+    getRange: () => ({ desde: fmt(startOfWeek(hoy(), { weekStartsOn: 1 })), hasta: fmt(hoy()) }),
+  },
+  {
+    id: '7dias',
+    label: 'Últimos 7 días',
+    icon: CalendarDays,
+    getRange: () => ({ desde: fmt(subDays(hoy(), 6)), hasta: fmt(hoy()) }),
+  },
+  {
+    id: 'mes',
+    label: 'Este mes',
+    icon: CalendarRange,
+    getRange: () => ({ desde: fmt(startOfMonth(hoy())), hasta: fmt(hoy()) }),
+  },
+  {
+    id: 'mesAnterior',
+    label: 'Mes anterior',
+    icon: CalendarRange,
+    getRange: () => {
+      const mesAnt = subMonths(hoy(), 1)
+      return {
+        desde: fmt(startOfMonth(mesAnt)),
+        hasta: fmt(new Date(mesAnt.getFullYear(), mesAnt.getMonth() + 1, 0)),
+      }
+    },
+  },
+  {
+    id: 'personalizado',
+    label: 'Personalizado',
+    icon: CalendarRange,
+    getRange: () => ({ desde: fmt(startOfMonth(hoy())), hasta: fmt(hoy()) }),
+  },
+]
+
+// ─── StatCard ─────────────────────────────────────────────────────────────────
 
 function StatCard({ title, value, sub, icon: Icon, isLoading }: {
   title: string
@@ -61,130 +127,60 @@ function StatCard({ title, value, sub, icon: Icon, isLoading }: {
   )
 }
 
-const ESTADO_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  completada: 'default',
-  pendiente: 'secondary',
-  cancelada: 'destructive',
-}
+// ─── Página ───────────────────────────────────────────────────────────────────
 
 export default function ReportesPage() {
   const today = new Date()
-  const [fechaDesde, setFechaDesde] = useState(format(startOfMonth(today), 'yyyy-MM-dd'))
-  const [fechaHasta, setFechaHasta] = useState(format(today, 'yyyy-MM-dd'))
-  const [metodoPago, setMetodoPago] = useState('')
-  const [vendedorId, setVendedorId] = useState('')
-  const [estado, setEstado] = useState('')
+  const [perfilActivo, setPerfilActivo] = useState<PerfilId>('mes')
+  const [fechaDesde, setFechaDesde] = useState(fmt(startOfMonth(today)))
+  const [fechaHasta, setFechaHasta] = useState(fmt(today))
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false)
 
-  const { data: ventasData, isLoading: loadingVentas, isError: errorVentas, refetch: refetchVentas } = useQuery({
-    queryKey: ['reportes-ventas', fechaDesde, fechaHasta, metodoPago, vendedorId, estado],
-    queryFn: () =>
-      ventasService.list({
-        fechaDesde: new Date(fechaDesde).toISOString(),
-        fechaHasta: new Date(fechaHasta + 'T23:59:59').toISOString(),
-        metodoPago: metodoPago || undefined,
-        vendedorId: vendedorId || undefined,
-        estado: estado || undefined,
-        pageSize: 500,
-      }),
-  })
+  // Cuando se elige un perfil predefinido, actualizamos fechas automáticamente
+  function seleccionarPerfil(perfil: Perfil) {
+    setPerfilActivo(perfil.id)
+    if (perfil.id !== 'personalizado') {
+      const { desde, hasta } = perfil.getRange()
+      setFechaDesde(desde)
+      setFechaHasta(hasta)
+    }
+  }
 
-  const { data: usuariosData } = useQuery({
-    queryKey: ['ventas-vendedores'],
-    queryFn: () => ventasService.listVendedores(),
+  // ── Queries ────────────────────────────────────────────────────────────────
+  const { data: resumen, isLoading, isError, refetch } = useQuery({
+    queryKey: ['reportes-resumen', fechaDesde, fechaHasta],
+    queryFn: () => reportesService.getResumen(fechaDesde, fechaHasta),
+    staleTime: 1000 * 60 * 2, // 2 min
   })
 
   const { data: productosData, isLoading: loadingProductos } = useQuery({
     queryKey: ['reportes-stock'],
     queryFn: () => productosService.list({ soloActivos: false, pageSize: 500 }),
+    staleTime: 1000 * 60 * 10, // 10 min — el stock cambia poco
   })
-  const ventas = ventasData?.data ?? []
+
   const productos = productosData?.data ?? []
+
+  // Datos derivados para los PDFs (compatibilidad con ReporteVentasPDF)
+  const statsForPDF = {
+    totalVentas:  resumen?.resumen.total_ventas  ?? 0,
+    montoTotal:   resumen?.resumen.ingreso_total ?? 0,
+    ticketPromedio: resumen?.resumen.ticket_promedio ?? 0,
+  }
 
   const handleExcelExport = async () => {
     setIsDownloadingExcel(true)
     try {
       await downloadBackupExcel()
     } catch {
-      // error silencioso — el toast lo maneja el servicio
+      // el toast lo maneja el servicio
     } finally {
       setIsDownloadingExcel(false)
     }
   }
 
-  // Computed stats
-  const totalVentas = ventas.length
-  const montoTotal = ventas.reduce((acc, v) => acc + v.total_final, 0)
-  const ticketPromedio = totalVentas > 0 ? montoTotal / totalVentas : 0
-
-  // Breakdown por método de pago
-  const byMetodo = ventas.reduce<Record<string, { count: number; total: number }>>((acc, v) => {
-    const key = v.metodo_pago
-    if (!acc[key]) acc[key] = { count: 0, total: 0 }
-    acc[key].count += 1
-    acc[key].total += v.total_final
-    return acc
-  }, {})
-
-  const columns: Column<Venta>[] = [
-    {
-      key: 'numero_venta',
-      header: '#',
-      className: 'w-16',
-      cell: (v) => (
-        <span className="font-mono text-muted-foreground text-sm">
-          {String(v.numero_venta).padStart(4, '0')}
-        </span>
-      ),
-    },
-    {
-      key: 'created_at',
-      header: 'Fecha',
-      cell: (v) => <span className="text-sm">{formatDate(v.created_at)}</span>,
-    },
-    {
-      key: 'cliente',
-      header: 'Cliente',
-      cell: (v) =>
-        v.cliente ? (
-          <span>{v.cliente.nombre} {v.cliente.apellido}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      key: 'vendedor',
-      header: 'Vendedor',
-      cell: (v) =>
-        v.vendedor ? (
-          <span className="text-sm">{v.vendedor.nombre} {v.vendedor.apellido}</span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        ),
-    },
-    {
-      key: 'metodo_pago',
-      header: 'Método',
-      cell: (v) => (
-        <Badge variant="outline">{METODO_LABEL[v.metodo_pago]}</Badge>
-      ),
-    },
-    {
-      key: 'estado',
-      header: 'Estado',
-      cell: (v) => (
-        <Badge variant={ESTADO_VARIANT[v.estado] ?? 'outline'}>
-          {v.estado.charAt(0).toUpperCase() + v.estado.slice(1)}
-        </Badge>
-      ),
-    },
-    {
-      key: 'total_final',
-      header: 'Total',
-      className: 'text-right',
-      cell: (v) => <span className="font-semibold">{formatCurrency(v.total_final)}</span>,
-    },
-  ]
+  const porMetodo = resumen?.por_metodo ?? []
+  const isPersonalizado = perfilActivo === 'personalizado'
 
   return (
     <div className="flex flex-col gap-6">
@@ -193,17 +189,34 @@ export default function ReportesPage() {
         description="Análisis de ventas y estado del stock"
       />
 
-      {/* Filtros */}
+      {/* ── Perfiles de período ─────────────────────────────────────────── */}
       <Card>
-        <CardContent className="pt-4">
+        <CardContent className="pt-4 flex flex-col gap-4">
+          {/* Botones de perfil rápido */}
+          <div className="flex flex-wrap gap-2">
+            {PERFILES.map((p) => (
+              <Button
+                key={p.id}
+                variant={perfilActivo === p.id ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => seleccionarPerfil(p)}
+              >
+                <p.icon className="size-3.5 mr-1.5" />
+                {p.label}
+              </Button>
+            ))}
+          </div>
+
+          {/* Date pickers — solo editables en modo personalizado */}
           <div className="flex flex-wrap items-end gap-4">
             <div className="flex flex-col gap-1.5">
               <Label>Desde</Label>
               <Input
                 type="date"
                 value={fechaDesde}
-                onChange={(e) => setFechaDesde(e.target.value)}
-                className="w-40"
+                disabled={!isPersonalizado}
+                onChange={(e) => { setFechaDesde(e.target.value) }}
+                className="w-40 disabled:opacity-60"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -211,95 +224,49 @@ export default function ReportesPage() {
               <Input
                 type="date"
                 value={fechaHasta}
-                onChange={(e) => setFechaHasta(e.target.value)}
-                className="w-40"
+                disabled={!isPersonalizado}
+                onChange={(e) => { setFechaHasta(e.target.value) }}
+                className="w-40 disabled:opacity-60"
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Estado</Label>
-              <Select
-                value={estado || 'all'}
-                onValueChange={(v) => setEstado((v as string) === 'all' ? '' : (v as string))}
-              >
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="completada">Completada</SelectItem>
-                  <SelectItem value="cancelada">Cancelada</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Método de pago</Label>
-              <Select
-                value={metodoPago || 'all'}
-                onValueChange={(v) => setMetodoPago((v as string) === 'all' ? '' : (v as string))}
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Método" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="efectivo">Efectivo</SelectItem>
-                  <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                  <SelectItem value="transferencia">Transferencia</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Vendedor</Label>
-              <Select
-                value={vendedorId || 'all'}
-                onValueChange={(v) => setVendedorId((v as string) === 'all' ? '' : (v as string))}
-              >
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="Vendedor" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {(usuariosData ?? []).map((u) => (
-                    <SelectItem key={u.id} value={String(u.id)}>{u.nombre} {u.apellido}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+
             <Separator orientation="vertical" className="h-9 hidden sm:block" />
-            <div className="flex gap-2 ml-auto">
+
+            {/* Exportaciones */}
+            <div className="flex gap-2 ml-auto flex-wrap">
               <Button
                 variant="outline"
                 onClick={handleExcelExport}
                 disabled={isDownloadingExcel}
               >
-                <Sheet data-icon="inline-start" />
+                <Sheet className="size-4 mr-1.5" />
                 {isDownloadingExcel ? 'Generando...' : 'Exportar Excel'}
               </Button>
               <PDFDownloadLink
                 document={
                   <ReporteVentasPDF
-                    ventas={ventas}
+                    ventas={[]}
                     fechaDesde={fechaDesde}
                     fechaHasta={fechaHasta}
-                    stats={{ totalVentas, montoTotal, ticketPromedio }}
+                    stats={statsForPDF}
                   />
                 }
                 fileName={`reporte-ventas-${fechaDesde}-${fechaHasta}.pdf`}
               >
                 {({ loading }) => (
-                  <Button variant="outline" disabled={loading || loadingVentas}>
-                    <FileText data-icon="inline-start" />
+                  <Button variant="outline" disabled={loading || isLoading}>
+                    <FileText className="size-4 mr-1.5" />
                     {loading ? 'Generando...' : 'Reporte Ventas PDF'}
                   </Button>
                 )}
               </PDFDownloadLink>
               <PDFDownloadLink
                 document={<ReporteStockPDF productos={productos} />}
-                fileName={`reporte-stock-${format(today, 'yyyy-MM-dd')}.pdf`}
+                fileName={`reporte-stock-${fmt(today)}.pdf`}
               >
                 {({ loading }) => (
                   <Button variant="outline" disabled={loading || loadingProductos}>
-                    <Download data-icon="inline-start" />
+                    <Download className="size-4 mr-1.5" />
                     {loading ? 'Generando...' : 'Reporte Stock PDF'}
                   </Button>
                 )}
@@ -309,70 +276,70 @@ export default function ReportesPage() {
         </CardContent>
       </Card>
 
-      {/* KPIs */}
-      {errorVentas ? (
+      {/* ── KPIs ────────────────────────────────────────────────────────── */}
+      {isError ? (
         <QueryErrorState
-          message="No se pudieron cargar los datos de ventas."
-          onRetry={() => refetchVentas()}
+          message="No se pudieron cargar los datos del período."
+          onRetry={() => refetch()}
         />
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <StatCard
               title="Total ventas"
-              value={String(totalVentas)}
-              sub="transacciones en el período"
+              value={String(resumen?.resumen.total_ventas ?? 0)}
+              sub="transacciones completadas en el período"
               icon={ShoppingCart}
-              isLoading={loadingVentas}
+              isLoading={isLoading}
             />
             <StatCard
               title="Monto total"
-              value={formatCurrency(montoTotal)}
+              value={formatCurrency(resumen?.resumen.ingreso_total ?? 0)}
               sub="suma de ventas completadas"
               icon={TrendingUp}
-              isLoading={loadingVentas}
+              isLoading={isLoading}
             />
             <StatCard
               title="Ticket promedio"
-              value={formatCurrency(ticketPromedio)}
+              value={formatCurrency(resumen?.resumen.ticket_promedio ?? 0)}
               sub="por transacción"
               icon={TrendingUp}
-              isLoading={loadingVentas}
+              isLoading={isLoading}
             />
           </div>
 
-          {/* Breakdown por método */}
+          {/* ── Desglose por método ─────────────────────────────────────── */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Desglose por método de pago</CardTitle>
             </CardHeader>
             <CardContent>
-              {loadingVentas ? (
+              {isLoading ? (
                 <div className="flex gap-4">
                   {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 flex-1" />)}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  {Object.entries(byMetodo).map(([metodo, stats]) => {
-                    const Icon = METODO_ICON[metodo] ?? Banknote
+                  {porMetodo.map((m) => {
+                    const key = m.metodo_pago.toLowerCase()
+                    const Icon = METODO_ICON[key] ?? Banknote
                     return (
-                      <div
-                        key={metodo}
-                        className="flex items-center gap-3 rounded-lg border p-4"
-                      >
+                      <div key={m.metodo_pago} className="flex items-center gap-3 rounded-lg border p-4">
                         <div className="size-10 rounded-md bg-muted flex items-center justify-center shrink-0">
                           <Icon className="size-5 text-muted-foreground" />
                         </div>
                         <div>
-                          <p className="font-medium capitalize">{METODO_LABEL[metodo]}</p>
+                          <p className="font-medium capitalize">
+                            {METODO_LABEL[key] ?? m.metodo_pago}
+                          </p>
                           <p className="text-sm text-muted-foreground">
-                            {stats.count} ventas · {formatCurrency(stats.total)}
+                            {m.cantidad} ventas · {formatCurrency(m.total)}
                           </p>
                         </div>
                       </div>
                     )
                   })}
-                  {Object.keys(byMetodo).length === 0 && (
+                  {porMetodo.length === 0 && !isLoading && (
                     <p className="text-sm text-muted-foreground col-span-3">
                       No hay ventas en el período seleccionado.
                     </p>
@@ -382,21 +349,58 @@ export default function ReportesPage() {
             </CardContent>
           </Card>
 
-          {/* Tabla de ventas */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Detalle de ventas</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <DataTable
-                columns={columns}
-                data={ventas}
-                isLoading={loadingVentas}
-                rowKey={(v) => v.id}
-                emptyMessage="No hay ventas en el período seleccionado."
-              />
-            </CardContent>
-          </Card>
+          {/* ── Top productos ───────────────────────────────────────────── */}
+          {(resumen?.productos_top?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Productos más vendidos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="divide-y">
+                  {resumen!.productos_top.map((p, i) => (
+                    <div key={p.id} className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono w-5 text-muted-foreground">{i + 1}</span>
+                        <div>
+                          <p className="font-medium text-sm">{p.nombre}</p>
+                          <p className="text-xs text-muted-foreground">{p.codigo}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">{formatCurrency(p.ingreso_total)}</p>
+                        <p className="text-xs text-muted-foreground">{p.unidades_vendidas} uds.</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Top vendedores ──────────────────────────────────────────── */}
+          {(resumen?.por_vendedor?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Ventas por vendedor</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="divide-y">
+                  {resumen!.por_vendedor.map((v, i) => (
+                    <div key={v.id} className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono w-5 text-muted-foreground">{i + 1}</span>
+                        <p className="font-medium text-sm">{v.vendedor}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">{formatCurrency(v.monto_total)}</p>
+                        <p className="text-xs text-muted-foreground">{v.total_ventas} ventas</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>

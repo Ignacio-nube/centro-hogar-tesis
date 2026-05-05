@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, MoreHorizontal } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, MoreHorizontal, List } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,9 +19,13 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { ClienteDialog } from '@/features/clientes/components/ClienteDialog'
 import { clientesService } from '@/features/clientes/services/clientesService'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useDebounce } from '@/hooks/useDebounce'
 import { formatDate } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import type { Cliente } from '@/types/app.types'
+
+const PAGE_SIZE_DEFAULT = 5
+const PAGE_SIZE_EXPANDED = 10
 
 export default function ClientesPage() {
   const qc = useQueryClient()
@@ -32,18 +36,21 @@ export default function ClientesPage() {
   const [search, setSearch] = useState('')
   const [activoFilter, setActivoFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
+  const [verTodos, setVerTodos] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const PAGE_SIZE = 15
+  const debouncedSearch = useDebounce(search, 300)
+  const pageSize = verTodos ? PAGE_SIZE_EXPANDED : PAGE_SIZE_DEFAULT
 
   const activoParam =
     activoFilter === 'activo' ? true : activoFilter === 'inactivo' ? false : undefined
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['clientes', search, activoFilter, page],
-    queryFn: () => clientesService.list({ search, activo: activoParam, page, pageSize: PAGE_SIZE }),
+    queryKey: ['clientes', debouncedSearch, activoFilter, page, pageSize],
+    queryFn: () =>
+      clientesService.list({ search: debouncedSearch, activo: activoParam, page, pageSize }),
   })
 
   const deleteMutation = useMutation({
@@ -70,9 +77,7 @@ export default function ClientesPage() {
     {
       key: 'nombre',
       header: 'Nombre',
-      cell: (c) => (
-        <span className="font-medium">{c.apellido}, {c.nombre}</span>
-      ),
+      cell: (c) => <span className="font-medium">{c.apellido}, {c.nombre}</span>,
     },
     {
       key: 'dni',
@@ -166,6 +171,9 @@ export default function ClientesPage() {
       : []),
   ]
 
+  const totalCount = data?.count ?? 0
+  const hayMas = page * pageSize < totalCount
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -180,7 +188,7 @@ export default function ClientesPage() {
                 border: '1px solid oklch(0.61 0.146 52 / 0.2)',
               }}
             >
-              {data?.count ?? 0}
+              {totalCount}
             </span>
             <span className="text-sm text-muted-foreground">clientes registrados</span>
           </span>
@@ -195,7 +203,7 @@ export default function ClientesPage() {
         }
       />
 
-      {/* Filters */}
+      {/* Filtros */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
@@ -219,6 +227,28 @@ export default function ClientesPage() {
             <SelectItem value="inactivo">Inactivos</SelectItem>
           </SelectContent>
         </Select>
+
+        {!verTodos && totalCount > PAGE_SIZE_DEFAULT && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => { setVerTodos(true); setPage(1) }}
+          >
+            <List className="size-3.5 mr-1.5" />
+            Ver todos
+          </Button>
+        )}
+        {verTodos && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-muted-foreground"
+            onClick={() => { setVerTodos(false); setPage(1) }}
+          >
+            Mostrar menos
+          </Button>
+        )}
       </div>
 
       {isError ? (
@@ -234,11 +264,12 @@ export default function ClientesPage() {
         />
       )}
 
-      {data && data.count > PAGE_SIZE && (
+      {/* Paginación */}
+      {totalCount > pageSize && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Mostrando {Math.min((page - 1) * PAGE_SIZE + 1, data.count)}–
-            {Math.min(page * PAGE_SIZE, data.count)} de {data.count}
+            Mostrando {Math.min((page - 1) * pageSize + 1, totalCount)}–
+            {Math.min(page * pageSize, totalCount)} de {totalCount}
           </span>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
@@ -247,7 +278,7 @@ export default function ClientesPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={page * PAGE_SIZE >= data.count}
+              disabled={!hayMas}
               onClick={() => setPage(page + 1)}
             >
               Siguiente

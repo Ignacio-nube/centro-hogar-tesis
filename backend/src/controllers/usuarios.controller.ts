@@ -22,9 +22,12 @@ const updateSchema = z.object({
 
 export const usuariosController = {
 
-  async list(_req: Request, res: Response): Promise<void> {
-    const usuarios = await usuariosService.list()
-    r.ok(res, usuarios)
+  async list(req: Request, res: Response): Promise<void> {
+    const search   = (req.query['search']   as string | undefined) ?? ''
+    const page     = parseInt((req.query['page']     as string | undefined) ?? '1',  10) || 1
+    const pageSize = parseInt((req.query['pageSize'] as string | undefined) ?? '10', 10) || 10
+    const result = await usuariosService.list({ search, page, pageSize })
+    r.ok(res, result)
   },
 
   async getById(req: Request, res: Response): Promise<void> {
