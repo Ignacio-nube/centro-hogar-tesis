@@ -1,0 +1,186 @@
+import { pool } from '../config/database'
+
+export const reportesService = {
+
+  async ventasPorPeriodo(fechaDesde: string, fechaHasta: string) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT
+         COUNT(*)                                AS total_ventas,
+         COALESCE(SUM(total_final), 0)           AS ingreso_total,
+         COALESCE(AVG(total_final), 0)           AS ticket_promedio,
+         COALESCE(SUM(descuento),  0)            AS total_descuentos,
+         COALESCE(SUM(interes_monto), 0)         AS total_intereses
+       FROM ventas
+       WHERE estado_id = 1 AND created_at BETWEEN ? AND ?`,
+      [fechaDesde, fechaHasta]
+    )
+    return rows[0]
+  },
+
+  async ventasPorMetodoPago(fechaDesde: string, fechaHasta: string) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT mp.nombre AS metodo_pago,
+              COUNT(*)                        AS cantidad,
+              COALESCE(SUM(v.total_final), 0) AS total
+       FROM ventas v
+       JOIN metodos_pago mp ON mp.id = v.metodo_pago_id
+       WHERE v.estado_id = 1 AND v.created_at BETWEEN ? AND ?
+       GROUP BY mp.id, mp.nombre
+       ORDER BY total DESC`,
+      [fechaDesde, fechaHasta]
+    )
+    return rows
+  },
+
+  async ventasPorVendedor(fechaDesde: string, fechaHasta: string) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT u.id, CONCAT(u.nombre, ' ', u.apellido) AS vendedor,
+              COUNT(*)                        AS total_ventas,
+              COALESCE(SUM(v.total_final), 0) AS monto_total
+       FROM ventas v
+       JOIN usuarios u ON u.id = v.vendedor_id
+       WHERE v.estado_id = 1 AND v.created_at BETWEEN ? AND ?
+       GROUP BY u.id
+       ORDER BY monto_total DESC`,
+      [fechaDesde, fechaHasta]
+    )
+    return rows
+  },
+
+  async productosTopVentas(limit = 10) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT p.id, p.codigo, p.nombre,
+              SUM(vi.cantidad)                        AS unidades_vendidas,
+              SUM(vi.subtotal)                        AS ingreso_total
+       FROM venta_items vi
+       JOIN productos p ON p.id = vi.producto_id
+       JOIN ventas v     ON v.id = vi.venta_id
+       WHERE v.estado_id = 1
+       GROUP BY p.id
+       ORDER BY unidades_vendidas DESC
+       LIMIT ?`,
+      [limit]
+    )
+    return rows
+  },
+
+  async productosTopVentasPeriodo(fechaDesde: string, fechaHasta: string, limit = 10) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT p.id, p.codigo, p.nombre,
+              SUM(vi.cantidad)                        AS unidades_vendidas,
+              COALESCE(SUM(vi.subtotal), 0)           AS ingreso_total
+       FROM venta_items vi
+       JOIN productos p ON p.id = vi.producto_id
+       JOIN ventas v     ON v.id = vi.venta_id
+       WHERE v.estado_id = 1 AND v.created_at BETWEEN ? AND ?
+       GROUP BY p.id
+       ORDER BY unidades_vendidas DESC
+       LIMIT ?`,
+      [fechaDesde, fechaHasta, limit]
+    )
+    return rows.map((r: any) => ({
+      ...r,
+      unidades_vendidas: Number(r.unidades_vendidas),
+      ingreso_total:     Number(r.ingreso_total),
+    }))
+  },
+
+  async clientesTopComprasPeriodo(fechaDesde: string, fechaHasta: string, limit = 10) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT c.id,
+              CONCAT(c.nombre, ' ', c.apellido) AS cliente,
+              COUNT(v.id)                       AS total_compras,
+              COALESCE(SUM(v.total_final), 0)   AS monto_total
+       FROM ventas v
+       JOIN clientes c ON c.id = v.cliente_id
+       WHERE v.estado_id = 1 AND v.created_at BETWEEN ? AND ?
+       GROUP BY c.id
+       ORDER BY monto_total DESC
+       LIMIT ?`,
+      [fechaDesde, fechaHasta, limit]
+    )
+    return rows.map((r: any) => ({
+      ...r,
+      total_compras: Number(r.total_compras),
+      monto_total:   Number(r.monto_total),
+    }))
+  },
+
+  async ventasPorDiaRango(fechaDesde: string, fechaHasta: string) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT DATE(created_at) AS fecha,
+              COUNT(*)         AS cantidad,
+              SUM(total_final) AS total
+       FROM ventas
+       WHERE estado_id = 1 AND created_at BETWEEN ? AND ?
+       GROUP BY DATE(created_at)
+       ORDER BY fecha ASC`,
+      [fechaDesde, fechaHasta]
+    )
+    return rows.map((r: any) => ({
+      fecha:    String(r.fecha).slice(0, 10),
+      cantidad: Number(r.cantidad),
+      total:    Number(r.total),
+    }))
+  },
+
+  async stockActual() {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT p.id, p.codigo, p.nombre, p.stock_actual, p.stock_minimo,
+              c.nombre AS categoria,
+              (p.stock_actual <= p.stock_minimo) AS bajo_stock
+       FROM productos p
+       LEFT JOIN categorias c ON c.id = p.categoria_id
+       WHERE p.activo = 1
+       ORDER BY bajo_stock DESC, p.nombre ASC`
+    )
+    return rows.map((r: any) => ({
+      ...r,
+      bajo_stock: Boolean(r.bajo_stock),
+    }))
+  },
+
+  async clientesTopCompras(limit = 10) {
+    const [rows] = await pool.execute<any[]>(
+      `SELECT c.id,
+              CONCAT(c.nombre, ' ', c.apellido) AS cliente,
+              COUNT(v.id)                       AS total_compras,
+              COALESCE(SUM(v.total_final), 0)   AS monto_total
+       FROM ventas v
+       JOIN clientes c ON c.id = v.cliente_id
+       WHERE v.estado_id = 1
+       GROUP BY c.id
+       ORDER BY monto_total DESC
+       LIMIT ?`,
+      [limit]
+    )
+    return rows
+  },
+
+  async resumenCompleto(fechaDesde: string, fechaHasta: string) {
+    const [resumen, porMetodo, porVendedor, productosTop, clientesTop, ventasPorDia] = await Promise.all([
+      this.ventasPorPeriodo(fechaDesde, fechaHasta),
+      this.ventasPorMetodoPago(fechaDesde, fechaHasta),
+      this.ventasPorVendedor(fechaDesde, fechaHasta),
+      this.productosTopVentasPeriodo(fechaDesde, fechaHasta, 10),
+      this.clientesTopComprasPeriodo(fechaDesde, fechaHasta, 10),
+      this.ventasPorDiaRango(fechaDesde, fechaHasta),
+    ])
+    return {
+      resumen: {
+        ...resumen,
+        total_ventas:    Number(resumen.total_ventas),
+        ingreso_total:   Number(resumen.ingreso_total),
+        ticket_promedio: Number(resumen.ticket_promedio),
+        total_descuentos: Number(resumen.total_descuentos),
+        total_intereses:  Number(resumen.total_intereses),
+      },
+      por_metodo:    porMetodo,
+      por_vendedor:  porVendedor,
+      productos_top: productosTop,
+      clientes_top:  clientesTop,
+      ventas_por_dia: ventasPorDia,
+    }
+  },
+}
+

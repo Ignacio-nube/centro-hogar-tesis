@@ -1,0 +1,4 @@
+Email	Contraseña	Rol
+admin@centrohogar.com	test123	Admin
+elena.correa@centrohogar.com	test123	Encargado de stock
+lucas.garcia@centrohogar.com	test123	Vendedor
