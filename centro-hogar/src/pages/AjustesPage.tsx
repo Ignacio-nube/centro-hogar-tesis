@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Download, RefreshCw, Link2, Sheet } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Sheet } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -22,7 +22,6 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { DataTable, type Column } from '@/components/common/DataTable'
 import { productosService } from '@/features/productos/services/productosService'
 import { downloadBackup, downloadBackupExcel } from '@/features/backup/backupService'
-import { googleSheetsService } from '@/features/integraciones/services/googleSheetsService'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import type { Categoria } from '@/types/app.types'
 
@@ -234,43 +233,8 @@ function CategoriasTab() {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function AjustesPage() {
-  const qc = useQueryClient()
   const [isDownloading, setIsDownloading] = useState(false)
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false)
-  const [spreadsheetInput, setSpreadsheetInput] = useState('')
-
-  const { data: sheetsSettings, isLoading: loadingSheetsSettings } = useQuery({
-    queryKey: ['google-sheets-settings'],
-    queryFn: () => googleSheetsService.getSettings(),
-  })
-
-  React.useEffect(() => {
-    if (sheetsSettings) {
-      setSpreadsheetInput(sheetsSettings.spreadsheetId)
-    }
-  }, [sheetsSettings?.spreadsheetId])
-
-  const saveSheetsMutation = useMutation({
-    mutationFn: () => googleSheetsService.setSpreadsheetId(spreadsheetInput),
-    onSuccess: () => {
-      toast.success('Vinculación de Google Sheets guardada')
-      qc.invalidateQueries({ queryKey: ['google-sheets-settings'] })
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || 'No se pudo guardar la vinculación')
-    },
-  })
-
-  const syncSheetsMutation = useMutation({
-    mutationFn: () => googleSheetsService.syncNow(),
-    onSuccess: (result) => {
-      toast.success(`Sincronización completa: ${result.summary.sheets} hojas, ${result.summary.rows} filas`)
-      qc.invalidateQueries({ queryKey: ['google-sheets-settings'] })
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || 'No se pudo sincronizar con Google Sheets')
-    },
-  })
 
   const handleBackup = async () => {
     setIsDownloading(true)
@@ -320,12 +284,14 @@ export default function AjustesPage() {
           <CardTitle className="text-base">Copia de seguridad</CardTitle>
           <CardDescription>
             Descargá todos los datos del sistema en CSV comprimido (ZIP) o en Excel (.xlsx).
+            Incluye ventas, clientes, productos, stock y más.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm text-muted-foreground">
-              Incluye clientes, productos, categorías, ventas, ítems, usuarios, movimientos y tablas auxiliares.
+              El archivo Excel contiene una hoja por cada tabla, con columnas de ancho
+              automático y encabezados resaltados.
             </p>
             <div className="flex items-center gap-2">
               <Button onClick={handleBackup} disabled={isDownloading} variant="outline">
@@ -338,55 +304,6 @@ export default function AjustesPage() {
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Sincronización Google Sheets</CardTitle>
-          <CardDescription>
-            Sincronización unidireccional manual (solo admin). Cada ejecución reemplaza completamente las hojas.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="spreadsheetId">URL o Spreadsheet ID</Label>
-            <Input
-              id="spreadsheetId"
-              value={spreadsheetInput}
-              onChange={(e) => setSpreadsheetInput(e.target.value)}
-              placeholder="https://docs.google.com/spreadsheets/d/..."
-              disabled={loadingSheetsSettings || saveSheetsMutation.isPending || syncSheetsMutation.isPending}
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => saveSheetsMutation.mutate()}
-              disabled={!spreadsheetInput.trim() || saveSheetsMutation.isPending || syncSheetsMutation.isPending}
-            >
-              <Link2 data-icon="inline-start" />
-              {saveSheetsMutation.isPending ? 'Guardando...' : 'Guardar vinculación'}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => syncSheetsMutation.mutate()}
-              disabled={!spreadsheetInput.trim() || syncSheetsMutation.isPending || saveSheetsMutation.isPending}
-            >
-              <RefreshCw data-icon="inline-start" className={syncSheetsMutation.isPending ? 'animate-spin' : ''} />
-              {syncSheetsMutation.isPending ? 'Sincronizando...' : 'Sincronizar ahora'}
-            </Button>
-          </div>
-
-          {sheetsSettings && (
-            <p className="text-sm text-muted-foreground">
-              Última sincronización: {sheetsSettings.lastSyncAt ?? 'nunca'}
-              {sheetsSettings.lastSyncStatus ? ` · ${sheetsSettings.lastSyncStatus.toUpperCase()}` : ''}
-              {sheetsSettings.lastSyncMessage ? ` · ${sheetsSettings.lastSyncMessage}` : ''}
-            </p>
-          )}
         </CardContent>
       </Card>
     </div>

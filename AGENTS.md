@@ -1,133 +1,104 @@
+# Centro Hogar — Instrucciones para agentes de IA
+
+Este documento describe el stack tecnológico y las convenciones del proyecto para que cualquier agente de IA pueda contribuir correctamente.
+
 ---
-description: Instructions building apps with MCP
-globs: *
-alwaysApply: true
+
+## Stack tecnológico
+
+### Frontend (`/centro-hogar`)
+
+| Capa | Tecnología | Notas |
+|------|-----------|-------|
+| Framework | React 19 + Vite + TypeScript | |
+| UI | shadcn/ui + Radix UI | Usar componentes de `@/components/ui/` |
+| Estilos | Tailwind CSS v4 | NO usar v3. Usar clases de Tailwind v4 |
+| Routing | React Router v7 | Rutas en `src/app/Router.tsx` |
+| Estado servidor | TanStack Query v5 | `useQuery` / `useMutation` |
+| Formularios | React Hook Form v7 + Zod v4 | Siempre validar con Zod |
+| Gráficos | Recharts v3 | |
+| PDF | @react-pdf/renderer v4 | PDFs en `src/features/reportes/pdf/` |
+| Iconos | Lucide React | |
+| Notificaciones | Sonner (`toast`) | |
+
+### Backend (`/backend`)
+
+| Capa | Tecnología | Notas |
+|------|-----------|-------|
+| Runtime | Node.js 18+ + TypeScript | |
+| Framework | Express v4 | |
+| Base de datos | MySQL 8 via `mysql2` | Pool en `src/config/database.ts` |
+| Auth | JWT + bcryptjs | Middleware en `src/middleware/auth.middleware.ts` |
+| Validación | Zod v3 | Siempre validar el body con Zod antes de procesar |
+| Respuestas | `src/utils/response.ts` | Usar `r.ok()`, `r.badRequest()`, `r.notFound()`, etc. |
+
+### Base de datos
+
+- **Motor**: MySQL 8, InnoDB, charset `utf8mb4`, timezone `UTC-3` (Argentina)
+- **Schema**: `database.sql` en la raíz del repo (importar en phpMyAdmin)
+- **Seed**: `seed.sql` en la raíz del repo
+
 ---
 
-# InsForge SDK Documentation - Overview
-
-## What is InsForge?
-
-Backend-as-a-service (BaaS) platform providing:
-
-- **Database**: PostgreSQL with PostgREST API
-- **Authentication**: Email/password + OAuth (Google, GitHub)
-- **Storage**: File upload/download
-- **AI**: Chat completions and image generation (OpenAI-compatible)
-- **Functions**: Serverless function deployment
-- **Realtime**: WebSocket pub/sub (database + client events)
-
-## Installation
-
-The following is a step-by-step guide to installing and using the InsForge TypeScript SDK for Web applications. If you are building other types of applications, please refer to:
-- [Swift SDK documentation](/sdks/swift/overview) for iOS, macOS, tvOS, and watchOS applications.
-- [Kotlin SDK documentation](/sdks/kotlin/overview) for Android applications.
-- [REST API documentation](/sdks/rest/overview) for direct HTTP API access.
-
-### 🚨 CRITICAL: Follow these steps in order
-
-### Step 1: Download Template
-
-Use the `download-template` MCP tool to create a new project with your backend URL and anon key pre-configured.
-
-### Step 2: Install SDK
-
-```bash
-npm install @insforge/sdk@latest
-```
-
-### Step 3: Create SDK Client
-
-You must create a client instance using `createClient()` with your base URL and anon key:
-
-```javascript
-import { createClient } from '@insforge/sdk';
-
-const client = createClient({
-  baseUrl: 'https://your-app.region.insforge.app',  // Your InsForge backend URL
-  anonKey: 'your-anon-key-here'       // Get this from backend metadata
-});
+## Estructura del proyecto
 
 ```
+tesis/
+├── centro-hogar/        # Frontend React SPA
+│   └── src/
+│       ├── app/         # Router, providers (Auth, Query)
+│       ├── components/  # common/, layout/, ui/ (shadcn)
+│       ├── features/    # Un folder por dominio (auth, clientes, productos, ventas, etc.)
+│       ├── hooks/       # usePermissions, useDebounce
+│       ├── lib/         # api.ts (cliente HTTP), utils.ts, validaciones Zod
+│       ├── pages/       # Una página por ruta
+│       └── types/       # app.types.ts (todos los tipos del dominio)
+├── backend/             # API REST Express
+│   └── src/
+│       ├── config/      # database.ts (pool MySQL), env.ts (variables)
+│       ├── controllers/ # Lógica de endpoints
+│       ├── middleware/  # auth, roles, errores
+│       ├── models/      # tipos TypeScript de la DB
+│       ├── routes/      # Rutas Express (index.ts registra todo)
+│       ├── services/    # Lógica de negocio
+│       └── utils/       # jwt, password, response, pagination
+├── database.sql         # Schema MySQL completo
+└── seed.sql             # Datos de prueba
+```
 
-**API BASE URL**: Your API base URL is `https://your-app.region.insforge.app`.
+---
 
-## Getting Detailed Documentation
+## Convenciones
 
-### 🚨 CRITICAL: Always Fetch Documentation Before Writing Code
+### Frontend
 
-InsForge provides official SDKs and REST APIs, use them to interact with InsForge services from your application code.
+- Los servicios de API viven en `src/features/<dominio>/services/<dominio>Service.ts`
+- Las páginas se llaman `<Nombre>Page.tsx` y viven en `src/pages/`
+- Los tipos del dominio van en `src/types/app.types.ts`
+- Usar el cliente HTTP `api` de `@/lib/api` (no usar `fetch` ni `axios` directamente)
+- Los alias de paths están configurados: usar `@/` en lugar de rutas relativas largas
+- Siempre usar componentes de `@/components/ui/` para UI (Button, Card, Input, etc.)
 
-- [TypeScript SDK](/sdks/typescript/overview) - JavaScript/TypeScript
-- [Swift SDK](/sdks/swift/overview) - iOS, macOS, tvOS, and watchOS
-- [Kotlin SDK](/sdks/kotlin/overview) - Android and Kotlin Multiplatform
-- [REST API](/sdks/rest/overview) - Direct HTTP API access
+### Backend
 
-Before writing or editing any InsForge integration code, you **MUST** call the `fetch-docs` or `fetch-sdk-docs` MCP tool to get the latest SDK documentation. This ensures you have accurate, up-to-date implementation patterns.
+- Toda respuesta pasa por las helpers de `src/utils/response.ts`
+- Los controladores solo orquestan; la lógica va en `src/services/`
+- Las rutas se registran en `src/routes/index.ts`
+- Variables de entorno se leen desde `src/config/env.ts` (nunca leer `process.env` directamente)
+- Los endpoints protegidos requieren `authMiddleware` y opcionalmente `soloAdmin` / `soloEncargadoOAdmin`
 
-### Use the InsForge `fetch-docs` MCP tool to get specific SDK documentation:
+### Base de datos
 
-Available documentation types:
+- No modificar el schema sin actualizar `database.sql`
+- Las vistas disponibles son: `v_ventas`, `v_productos`, `v_movimientos_stock`
+- Los campos `total_final` y `subtotal` son columnas GENERATED (no insertarlas)
+- `numero_venta` se genera con un trigger BEFORE INSERT
 
-- `"instructions"` - Essential backend setup (START HERE)
-- `"real-time"` - Real-time pub/sub (database + client events) via WebSockets
-- `"db-sdk-typescript"` - Database operations with TypeScript SDK
-- **Authentication** - Choose based on implementation:
-  - `"auth-sdk-typescript"` - TypeScript SDK methods for custom auth flows
-  - `"auth-components-react"` - Pre-built auth UI for React+Vite (singlepage App)
-  - `"auth-components-react-router"` - Pre-built auth UI for React(Vite+React Router) (Multipage App)
-  - `"auth-components-nextjs"` - Pre-built auth UI for Nextjs (SSR App)
-- `"storage-sdk"` - File storage operations
-- `"functions-sdk"` - Serverless functions invocation
-- `"ai-integration-sdk"` - AI chat and image generation
-- `"real-time"` - Real-time pub/sub (database + client events) via WebSockets
-- `"deployment"` - Deploy frontend applications via MCP tool
+---
 
-These documentations are mostly for TypeScript SDK. For other languages, you can also use `fetch-sdk-docs` mcp tool to get specific documentation.
+## Lo que NO existe en este proyecto
 
-### Use the InsForge `fetch-sdk-docs` MCP tool to get specific SDK documentation
-
-You can fetch sdk documentation using the `fetch-sdk-docs` MCP tool with specific feature type and language.
-
-Available feature types:
-- db - Database operations
-- storage - File storage operations
-- functions - Serverless functions invocation
-- auth - User authentication
-- ai - AI chat and image generation
-- realtime - Real-time pub/sub (database + client events) via WebSockets
-
-Available languages:
-- typescript - JavaScript/TypeScript SDK
-- swift - Swift SDK (for iOS, macOS, tvOS, and watchOS)
-- kotlin - Kotlin SDK (for Android and JVM applications)
-- rest-api - REST API
-
-## When to Use SDK vs MCP Tools
-
-### Always SDK for Application Logic:
-
-- Authentication (register, login, logout, profiles)
-- Database CRUD (select, insert, update, delete)
-- Storage operations (upload, download files)
-- AI operations (chat, image generation)
-- Serverless function invocation
-
-### Use MCP Tools for Infrastructure:
-
-- Project scaffolding (`download-template`) - Download starter templates with InsForge integration
-- Backend setup and metadata (`get-backend-metadata`)
-- Database schema management (`run-raw-sql`, `get-table-schema`)
-- Storage bucket creation (`create-bucket`, `list-buckets`, `delete-bucket`)
-- Serverless function deployment (`create-function`, `update-function`, `delete-function`)
-- Frontend deployment (`create-deployment`) - Deploy frontend apps to InsForge hosting
-
-## Important Notes
-
-- For auth: use `auth-sdk` for custom UI, or framework-specific components for pre-built UI
-- SDK returns `{data, error}` structure for all operations
-- Database inserts require array format: `[{...}]`
-- Serverless functions have single endpoint (no subpaths)
-- Storage: Upload files to buckets, store URLs in database
-- AI operations are OpenAI-compatible
-- **EXTRA IMPORTANT**: Use Tailwind CSS 3.4 (do not upgrade to v4). Lock these dependencies in `package.json`
+- No hay Supabase, PostgREST ni ningún Backend-as-a-Service
+- No hay integración con Google Sheets (fue eliminada)
+- No hay PostgreSQL (solo MySQL)
+- No hay @insforge/sdk ni ningún SDK de BaaS

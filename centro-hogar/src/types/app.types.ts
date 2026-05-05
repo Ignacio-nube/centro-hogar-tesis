@@ -138,9 +138,3 @@ export interface AuthLoginResult {
   }
 }
 
-export interface GoogleSheetsSettings {
-  spreadsheetId: string
-  lastSyncAt: string | null
-  lastSyncStatus: 'ok' | 'error' | null
-  lastSyncMessage: string | null
-}

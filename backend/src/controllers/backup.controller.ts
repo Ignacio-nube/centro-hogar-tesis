@@ -20,6 +20,25 @@ function toCSV(rows: Record<string, unknown>[]): string {
   return [headers.join(','), ...lines].join('\n')
 }
 
+/**
+ * Calcula el ancho óptimo de cada columna (en caracteres) basándose en el
+ * contenido más largo entre el encabezado y los valores de la columna.
+ * Mínimo 8, máximo 60 caracteres.
+ */
+function getColWidths(rows: Record<string, unknown>[]): XLSX.ColInfo[] {
+  if (rows.length === 0) return []
+  const headers = Object.keys(rows[0])
+  return headers.map((header) => {
+    const maxDataLen = rows.reduce((max, row) => {
+      const val = row[header]
+      const len = val === null || val === undefined ? 0 : String(val).length
+      return Math.max(max, len)
+    }, 0)
+    const wch = Math.min(60, Math.max(8, header.length, maxDataLen))
+    return { wch }
+  })
+}
+
 export const backupController = {
   async csv(_req: Request, res: Response): Promise<void> {
     const tables = await getExportData()
@@ -46,12 +65,42 @@ export const backupController = {
     const workbook = XLSX.utils.book_new()
 
     for (const table of tables) {
-      const rows = table.rows.length > 0 ? table.rows : [{ sin_datos: '' }]
+      const rows = table.rows.length > 0 ? table.rows : []
+
+      // Construir worksheet desde JSON
       const worksheet = XLSX.utils.json_to_sheet(rows)
-      XLSX.utils.book_append_sheet(workbook, worksheet, table.sheetName.slice(0, 31))
+
+      // Si no hay datos, crear hoja vacía con mensaje
+      if (rows.length === 0) {
+        XLSX.utils.sheet_add_aoa(worksheet, [['Sin datos']], { origin: 'A1' })
+        XLSX.utils.book_append_sheet(workbook, worksheet, table.sheetName)
+        continue
+      }
+
+      // Anchos de columna automáticos
+      worksheet['!cols'] = getColWidths(rows)
+
+      // Congelar la primera fila (encabezados)
+      worksheet['!freeze'] = { xSplit: 0, ySplit: 1 }
+
+      // Aplicar estilo bold a la fila de encabezados
+      const headers = Object.keys(rows[0])
+      headers.forEach((_, colIdx) => {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx })
+        if (worksheet[cellRef]) {
+          worksheet[cellRef].s = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: 'F0F0F0' } },
+            alignment: { horizontal: 'center' },
+          }
+        }
+      })
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, table.sheetName)
     }
 
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+    // Escribir con estilos habilitados
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', bookSST: false })
 
     res.setHeader(
       'Content-Type',

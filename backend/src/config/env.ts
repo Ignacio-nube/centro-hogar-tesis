@@ -8,8 +8,8 @@ const required = (key: string): string => {
 }
 
 export const env = {
-  port:         parseInt(process.env['PORT'] ?? '3001', 10),
-  nodeEnv:      process.env['NODE_ENV'] ?? 'development',
+  port:    parseInt(process.env['PORT'] ?? '3001', 10),
+  nodeEnv: process.env['NODE_ENV'] ?? 'development',
 
   db: {
     host:     process.env['DB_HOST']     ?? 'localhost',
@@ -31,10 +31,5 @@ export const env = {
     password: required('ADMIN_PASSWORD'),
     nombre:   process.env['ADMIN_NOMBRE']   ?? 'Admin',
     apellido: process.env['ADMIN_APELLIDO'] ?? 'Sistema',
-  },
-
-  googleSheets: {
-    serviceAccountEmail: process.env['GOOGLE_SERVICE_ACCOUNT_EMAIL'] ?? '',
-    privateKey: (process.env['GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY'] ?? '').replace(/\\n/g, '\n'),
   },
 } as const

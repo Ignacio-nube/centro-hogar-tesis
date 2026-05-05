@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, TrendingUp, ShoppingCart, CreditCard, Banknote, ArrowLeftRight, Download } from 'lucide-react'
+import { FileText, TrendingUp, ShoppingCart, CreditCard, Banknote, ArrowLeftRight, Download, Sheet } from 'lucide-react'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import { ReporteVentasPDF } from '@/features/reportes/pdf/ReporteVentasPDF'
 import { ReporteStockPDF } from '@/features/reportes/pdf/ReporteStockPDF'
 import { ventasService } from '@/features/ventas/services/ventasService'
 import { productosService } from '@/features/productos/services/productosService'
+import { downloadBackupExcel } from '@/features/backup/backupService'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { format, startOfMonth } from 'date-fns'
 import { QueryErrorState } from '@/components/ui/query-error-state'
@@ -73,6 +74,7 @@ export default function ReportesPage() {
   const [metodoPago, setMetodoPago] = useState('')
   const [vendedorId, setVendedorId] = useState('')
   const [estado, setEstado] = useState('')
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false)
 
   const { data: ventasData, isLoading: loadingVentas, isError: errorVentas, refetch: refetchVentas } = useQuery({
     queryKey: ['reportes-ventas', fechaDesde, fechaHasta, metodoPago, vendedorId, estado],
@@ -98,6 +100,17 @@ export default function ReportesPage() {
   })
   const ventas = ventasData?.data ?? []
   const productos = productosData?.data ?? []
+
+  const handleExcelExport = async () => {
+    setIsDownloadingExcel(true)
+    try {
+      await downloadBackupExcel()
+    } catch {
+      // error silencioso — el toast lo maneja el servicio
+    } finally {
+      setIsDownloadingExcel(false)
+    }
+  }
 
   // Computed stats
   const totalVentas = ventas.length
@@ -254,6 +267,14 @@ export default function ReportesPage() {
             </div>
             <Separator orientation="vertical" className="h-9 hidden sm:block" />
             <div className="flex gap-2 ml-auto">
+              <Button
+                variant="outline"
+                onClick={handleExcelExport}
+                disabled={isDownloadingExcel}
+              >
+                <Sheet data-icon="inline-start" />
+                {isDownloadingExcel ? 'Generando...' : 'Exportar Excel'}
+              </Button>
               <PDFDownloadLink
                 document={
                   <ReporteVentasPDF
