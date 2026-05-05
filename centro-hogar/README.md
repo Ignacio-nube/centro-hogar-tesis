@@ -15,7 +15,8 @@ Interfaz web del panel de gestión para una mueblería. Desarrollado con React 1
 | Formularios | React Hook Form + Zod |
 | Gráficos | Recharts |
 | PDF | @react-pdf/renderer |
-| Deploy | Vercel |
+| Iconos | Lucide React |
+| Notificaciones | Sonner |
 
 ---
 
@@ -53,9 +54,9 @@ El frontend queda disponible en `http://localhost:5173`.
 - **Clientes** — CRUD, historial de compras por cliente
 - **Productos** — CRUD con categorías, control de stock, imágenes
 - **Ventas** — wizard de nueva venta (cliente → carrito → pago → confirmar), listado con filtros, descarga de ticket PDF
-- **Reportes** — KPIs del período, desglose por método de pago, exportación a PDF
+- **Reportes** — KPIs del período, desglose por método de pago, exportación a PDF y Excel
 - **Usuarios** — alta/edición de usuarios con cambio de email y contraseña, roles (admin / encargado_stock / vendedor)
-- **Ajustes** — gestión de categorías, backup CSV/Excel y sincronización manual a Google Sheets
+- **Ajustes** — gestión de categorías, backup completo en CSV y Excel
 
 ---
 
@@ -91,7 +92,6 @@ src/
 │   ├── productos/            # productosService
 │   ├── ventas/               # ventasService, SaleWizard, PDF ticket
 │   ├── backup/               # descarga de backups CSV/Excel
-│   ├── integraciones/        # Google Sheets (vinculación + sync manual)
 │   ├── reportes/             # PDF reportes
 │   └── usuarios/             # UsuarioDialog
 ├── hooks/                    # usePermissions, useDebounce

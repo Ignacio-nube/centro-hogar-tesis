@@ -25,18 +25,18 @@ API REST construida con Node.js + Express + TypeScript que sirve de backend para
 ```
 backend/
 ├── .env.example          # Plantilla de variables de entorno
-├── src/
-│   ├── index.ts          # Punto de entrada (conecta DB, inicia servidor)
-│   ├── app.ts            # Configuración de Express
-│   ├── config/
-│   │   ├── database.ts   # Pool de conexiones MySQL
-│   │   └── env.ts        # Carga y validación de variables de entorno
-│   ├── controllers/      # Lógica de cada endpoint
-│   ├── middleware/       # Auth JWT, roles, manejo de errores
-│   ├── models/           # Interfaces TypeScript / tipos de la DB
-│   ├── routes/           # Definición de rutas Express
-│   ├── services/         # Lógica de negocio
-│   └── utils/            # JWT, passwords, respuestas, paginación
+└── src/
+    ├── index.ts          # Punto de entrada (conecta DB, inicia servidor)
+    ├── app.ts            # Configuración de Express
+    ├── config/
+    │   ├── database.ts   # Pool de conexiones MySQL
+    │   └── env.ts        # Carga y validación de variables de entorno
+    ├── controllers/      # Lógica de cada endpoint
+    ├── middleware/       # Auth JWT, roles, manejo de errores
+    ├── models/           # Interfaces TypeScript / tipos de la DB
+    ├── routes/           # Definición de rutas Express
+    ├── services/         # Lógica de negocio
+    └── utils/            # JWT, passwords, respuestas, paginación
 ```
 
 ---
@@ -54,8 +54,8 @@ Todos los endpoints están bajo el prefijo `/api`.
 | `GET/POST/PUT/DELETE /api/categorias` | Gestión de categorías |
 | `GET/POST /api/ventas` | Gestión de ventas |
 | `GET /api/reportes` | Reportes y KPIs |
-| `GET /api/reportes/backup` | Exportación de datos |
-| `GET/POST /api/integraciones` | Integración Google Sheets |
+| `GET /api/reportes/backup/csv` | Exportación CSV (ZIP con todas las tablas) |
+| `GET /api/reportes/backup/excel` | Exportación Excel (un libro con todas las tablas) |
 | `GET /health` | Health check (sin autenticación) |
 
 ---
@@ -92,8 +92,6 @@ cp .env.example .env
 | `FRONTEND_URL` | URL del frontend para CORS (default: `http://localhost:5173`) | No |
 | `ADMIN_EMAIL` | Email del administrador inicial | **Sí** |
 | `ADMIN_PASSWORD` | Contraseña del administrador inicial | **Sí** |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Email de cuenta de servicio Google (integración opcional) | No |
-| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Clave privada de cuenta de servicio Google (integración opcional) | No |
 
 > **Nota sobre XAMPP/WAMP:** Si usás MySQL de XAMPP sin contraseña, dejá `DB_PASSWORD` vacío.
 
@@ -131,5 +129,6 @@ npm run lint    # Analiza el código con ESLint
 
 - Al iniciar, el servidor verifica la conexión a MySQL. Si falla, se detiene con error.
 - Si el usuario administrador configurado en `.env` no existe en la DB, se crea automáticamente al arrancar.
-- La integración con Google Sheets es opcional. Si no se configuran las variables `GOOGLE_SERVICE_ACCOUNT_*`, la funcionalidad de sincronización estará deshabilitada.
 - El pool de MySQL opera con timezone `UTC-3` (Argentina) y charset `utf8mb4`.
+- Los endpoints protegidos requieren el header `Authorization: Bearer <token>`.
+- Los roles disponibles son: `admin`, `encargado_stock`, `vendedor`.

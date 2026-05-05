@@ -2,9 +2,6 @@
 
 Panel de administración web para una mueblería. Permite gestionar clientes, productos, ventas, reportes y usuarios desde una interfaz moderna. Desarrollado como proyecto de tesis universitaria.
 
-![Productos](productos-page.png)
-![Ventas](ventas-page.png)
-
 ---
 
 ## Stack tecnológico
@@ -18,7 +15,6 @@ Panel de administración web para una mueblería. Permite gestionar clientes, pr
 | Formularios | React Hook Form + Zod |
 | Gráficos | Recharts |
 | PDF | @react-pdf/renderer |
-| Deploy frontend | Vercel |
 | Backend | Node.js + Express + TypeScript |
 | Base de datos | MySQL 8 (gestionado con phpMyAdmin) |
 | Autenticación | JWT + bcrypt |
@@ -31,7 +27,7 @@ Panel de administración web para una mueblería. Permite gestionar clientes, pr
 tesis/
 ├── centro-hogar/   # Frontend — React SPA
 ├── backend/        # Backend — API REST Express
-├── database.sql    # Esquema MySQL completo (v3.0)
+├── database.sql    # Esquema MySQL completo
 ├── seed.sql        # Datos de prueba iniciales
 └── datos.txt       # Credenciales de prueba
 ```
@@ -51,8 +47,8 @@ tesis/
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/centro-hogar.git
-cd centro-hogar
+git clone https://github.com/Ignacio-nube/centro-hogar-tesis.git
+cd centro-hogar-tesis
 ```
 
 ### 2. Configurar la base de datos en phpMyAdmin
@@ -78,6 +74,7 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=           # tu contraseña de MySQL (vacío si usás XAMPP por defecto)
 DB_NAME=centro_hogar
+JWT_SECRET=un-secreto-largo-y-seguro-de-minimo-32-caracteres
 ```
 
 Instalá dependencias y levantá el servidor:
@@ -92,7 +89,7 @@ El backend corre en `http://localhost:3001`.
 ### 4. Configurar el frontend
 
 ```bash
-cd centro-hogar
+cd ../centro-hogar
 cp .env.example .env
 ```
 
@@ -115,22 +112,20 @@ El frontend corre en `http://localhost:5173`.
 
 ## Variables de entorno — Backend
 
-| Variable | Descripción | Valor por defecto |
-|----------|-------------|-------------------|
-| `PORT` | Puerto del servidor | `3001` |
-| `NODE_ENV` | Entorno (`development` / `production`) | `development` |
-| `DB_HOST` | Host de MySQL | `localhost` |
-| `DB_PORT` | Puerto de MySQL | `3306` |
-| `DB_USER` | Usuario de MySQL | `root` |
-| `DB_PASSWORD` | Contraseña de MySQL | _(vacío)_ |
-| `DB_NAME` | Nombre de la base de datos | `centro_hogar` |
-| `JWT_SECRET` | Secreto para firmar tokens JWT (mín. 32 caracteres) | — |
-| `JWT_EXPIRES_IN` | Duración del token JWT | `8h` |
-| `FRONTEND_URL` | URL del frontend (para CORS) | `http://localhost:5173` |
-| `ADMIN_EMAIL` | Email del usuario admin inicial | — |
-| `ADMIN_PASSWORD` | Contraseña del usuario admin inicial | — |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Email de cuenta de servicio Google (opcional) | — |
-| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Clave privada de cuenta de servicio Google (opcional) | — |
+| Variable | Descripción | Requerida |
+|----------|-------------|-----------|
+| `PORT` | Puerto del servidor | No (default: `3001`) |
+| `NODE_ENV` | Entorno: `development` / `production` | No |
+| `DB_HOST` | Host de MySQL | No (default: `localhost`) |
+| `DB_PORT` | Puerto de MySQL | No (default: `3306`) |
+| `DB_USER` | Usuario de MySQL | No (default: `root`) |
+| `DB_PASSWORD` | Contraseña de MySQL | No |
+| `DB_NAME` | Nombre de la base de datos | No (default: `centro_hogar`) |
+| `JWT_SECRET` | Secreto para firmar tokens JWT (mín. 32 caracteres) | **Sí** |
+| `JWT_EXPIRES_IN` | Duración del token JWT | No (default: `8h`) |
+| `FRONTEND_URL` | URL del frontend (para CORS) | No (default: `http://localhost:5173`) |
+| `ADMIN_EMAIL` | Email del usuario admin inicial | **Sí** |
+| `ADMIN_PASSWORD` | Contraseña del usuario admin inicial | **Sí** |
 
 ## Variables de entorno — Frontend
 
@@ -170,6 +165,6 @@ El frontend corre en `http://localhost:5173`.
 - **Clientes** — CRUD completo, historial de compras por cliente
 - **Productos** — CRUD con categorías, control de stock e imágenes
 - **Ventas** — wizard multi-paso (cliente → carrito → pago → confirmar), descarga de ticket PDF
-- **Reportes** — KPIs por período, desglose por método de pago, exportación a PDF
+- **Reportes** — KPIs por período, desglose por método de pago, exportación a PDF y Excel
 - **Usuarios** — alta/edición con roles (admin / encargado_stock / vendedor)
-- **Ajustes** — gestión de categorías, backup CSV/Excel, sincronización con Google Sheets
+- **Ajustes** — gestión de categorías, backup completo en CSV y Excel
