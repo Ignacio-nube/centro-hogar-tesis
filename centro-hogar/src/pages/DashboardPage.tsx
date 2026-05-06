@@ -78,17 +78,42 @@ function DonutTooltip({ active, payload }: any) {
 
 // ─── Active shape del donut (slice seleccionado se expande) ──────────────────
 function ActiveSlice(props: any) {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props
-  // importamos sector de recharts dinámicamente via el prop shape
-  const { Sector } = require('recharts')
+  const {
+    cx, cy, innerRadius, outerRadius,
+    startAngle, endAngle, fill,
+  } = props
+
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const expandedOuter = outerRadius + 8
+  const expandedInner = innerRadius - 2
+
+  const cos1 = Math.cos(-toRad(startAngle))
+  const sin1 = Math.sin(-toRad(startAngle))
+  const cos2 = Math.cos(-toRad(endAngle))
+  const sin2 = Math.sin(-toRad(endAngle))
+
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0
+
+  const ox1 = cx + expandedOuter * cos1
+  const oy1 = cy + expandedOuter * sin1
+  const ox2 = cx + expandedOuter * cos2
+  const oy2 = cy + expandedOuter * sin2
+  const ix1 = cx + expandedInner * cos2
+  const iy1 = cy + expandedInner * sin2
+  const ix2 = cx + expandedInner * cos1
+  const iy2 = cy + expandedInner * sin1
+
+  const d = [
+    `M ${ox1} ${oy1}`,
+    `A ${expandedOuter} ${expandedOuter} 0 ${largeArc} 0 ${ox2} ${oy2}`,
+    `L ${ix1} ${iy1}`,
+    `A ${expandedInner} ${expandedInner} 0 ${largeArc} 1 ${ix2} ${iy2}`,
+    'Z',
+  ].join(' ')
+
   return (
-    <Sector
-      cx={cx}
-      cy={cy}
-      innerRadius={innerRadius - 2}
-      outerRadius={outerRadius + 8}
-      startAngle={startAngle}
-      endAngle={endAngle}
+    <path
+      d={d}
       fill={fill}
       stroke="white"
       strokeWidth={2}
