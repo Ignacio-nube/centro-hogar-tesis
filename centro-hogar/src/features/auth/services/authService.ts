@@ -64,13 +64,15 @@ export const authService = {
 
   async listUsers(opts?: {
     search?: string
+    activo?: boolean
     page?: number
     pageSize?: number
   }): Promise<{ data: Profile[]; count: number }> {
     const params = new URLSearchParams()
-    if (opts?.search)   params.set('search',   opts.search)
-    if (opts?.page)     params.set('page',     String(opts.page))
-    if (opts?.pageSize) params.set('pageSize', String(opts.pageSize))
+    if (opts?.search)            params.set('search',   opts.search)
+    if (opts?.activo !== undefined) params.set('activo', String(opts.activo))
+    if (opts?.page)              params.set('page',     String(opts.page))
+    if (opts?.pageSize)          params.set('pageSize', String(opts.pageSize))
     const qs = params.toString()
     const result = await api.get<{ data: any[]; count: number }>(
       `/usuarios${qs ? `?${qs}` : ''}`

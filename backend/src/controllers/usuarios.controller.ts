@@ -26,7 +26,9 @@ export const usuariosController = {
     const search   = (req.query['search']   as string | undefined) ?? ''
     const page     = parseInt((req.query['page']     as string | undefined) ?? '1',  10) || 1
     const pageSize = parseInt((req.query['pageSize'] as string | undefined) ?? '10', 10) || 10
-    const result = await usuariosService.list({ search, page, pageSize })
+    const activoStr = req.query['activo'] as string | undefined
+    const activo = activoStr !== undefined ? activoStr === 'true' : undefined
+    const result = await usuariosService.list({ search, page, pageSize, activo })
     r.ok(res, result)
   },
 

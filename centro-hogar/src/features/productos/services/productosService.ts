@@ -9,6 +9,7 @@ interface ProductoListParams {
   soloActivo?: boolean | null
   bajoStock?: boolean
   conStock?: boolean
+  sort?: 'top' | 'nombre'
   page?: number
   pageSize?: number
 }
@@ -59,6 +60,7 @@ function buildListQuery(params?: ProductoListParams): string {
 
   if (params.bajoStock) q.set('bajoStock', 'true')
   if (params.conStock) q.set('conStock', 'true')
+  if (params.sort) q.set('sort', params.sort)
   if (params.page) q.set('page', String(params.page))
   if (params.pageSize) q.set('pageSize', String(params.pageSize))
 

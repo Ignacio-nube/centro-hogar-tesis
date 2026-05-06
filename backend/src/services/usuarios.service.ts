@@ -16,6 +16,7 @@ export const usuariosService = {
 
   async list(opts?: {
     search?: string
+    activo?: boolean
     page?: number
     pageSize?: number
   }): Promise<{ data: Usuario[]; count: number }> {
@@ -27,6 +28,10 @@ export const usuariosService = {
     const whereClauses: string[] = []
     const params: (string | number)[] = []
 
+    if (opts?.activo !== undefined) {
+      whereClauses.push('u.activo = ?')
+      params.push(opts.activo ? 1 : 0)
+    }
     if (search) {
       whereClauses.push(
         `(u.nombre LIKE ? OR u.apellido LIKE ? OR u.email LIKE ?)`

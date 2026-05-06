@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Search, List } from 'lucide-react'
+import { Plus, Pencil, Search, SlidersHorizontal, List } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/PageHeader'
 import { DataTable, type Column } from '@/components/common/DataTable'
+import { PaginationControls } from '@/components/common/PaginationControls'
 import { RoleBadge } from '@/components/common/RoleBadge'
 import { UsuarioDialog } from '@/features/usuarios/components/UsuarioDialog'
 import { authService } from '@/features/auth/services/authService'
@@ -15,24 +17,42 @@ import { formatDate } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import type { Profile } from '@/types/app.types'
 
-const PAGE_SIZE_DEFAULT  = 5
-const PAGE_SIZE_EXPANDED = 10
+type Modo = 'inicial' | 'buscando' | 'todos'
+
+const PAGE_SIZE_INICIAL = 5
+const PAGE_SIZE_TODOS   = 15
 
 export default function UsuariosPage() {
   const qc = useQueryClient()
 
-  const [dialogOpen, setDialogOpen]     = useState(false)
-  const [editingUser, setEditingUser]   = useState<Profile | null>(null)
-  const [search, setSearch]             = useState('')
-  const [page, setPage]                 = useState(1)
-  const [verTodos, setVerTodos]         = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingUser, setEditingUser] = useState<Profile | null>(null)
 
+  const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
-  const pageSize = verTodos ? PAGE_SIZE_EXPANDED : PAGE_SIZE_DEFAULT
+
+  // filtros pendientes
+  const [activoFilterPend, setActivoFilterPend] = useState<string>('activo')
+  // filtros aplicados
+  const [activoFilter, setActivoFilter] = useState<string>('activo')
+
+  const [page, setPage] = useState(1)
+  const [modo, setModo] = useState<Modo>('inicial')
+
+  const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
+
+  const activoParam =
+    activoFilter === 'activo' ? true : activoFilter === 'inactivo' ? false : undefined
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['usuarios', debouncedSearch, page, pageSize],
-    queryFn: () => authService.listUsers({ search: debouncedSearch, page, pageSize }),
+    queryKey: ['usuarios', debouncedSearch, activoFilter, page, modo],
+    queryFn: () =>
+      authService.listUsers({
+        search: debouncedSearch || undefined,
+        activo: activoParam,
+        page,
+        pageSize,
+      }),
   })
 
   const toggleActivoMutation = useMutation({
@@ -44,6 +64,31 @@ export default function UsuariosPage() {
     },
     onError: () => toast.error('Error al actualizar el usuario'),
   })
+
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    setPage(1)
+    setModo(value.trim() ? 'buscando' : 'inicial')
+  }
+
+  function handleAplicarFiltros() {
+    setActivoFilter(activoFilterPend)
+    setPage(1)
+  }
+
+  function handleVerTodos() {
+    setModo('todos')
+    setPage(1)
+  }
+
+  function handleMostrarMenos() {
+    setModo('inicial')
+    setSearch('')
+    setPage(1)
+  }
+
+  const totalCount = data?.count ?? 0
+  const mostrarPaginacion = modo !== 'inicial'
 
   const columns: Column<Profile>[] = [
     {
@@ -64,23 +109,17 @@ export default function UsuariosPage() {
     {
       key: 'activo',
       header: 'Estado',
+      className: 'w-20',
       cell: (u) => (
-        <button
-          className="cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          title={u.activo ? 'Clic para desactivar' : 'Clic para activar'}
+        <Switch
+          size="sm"
+          checked={u.activo}
           disabled={toggleActivoMutation.isPending}
-          onClick={(e) => {
-            e.stopPropagation()
-            toggleActivoMutation.mutate({ id: u.id, activo: !u.activo })
-          }}
-        >
-          <Badge
-            variant={u.activo ? 'default' : 'secondary'}
-            className="hover:opacity-80 transition-opacity"
-          >
-            {u.activo ? 'Activo' : 'Inactivo'}
-          </Badge>
-        </button>
+          onCheckedChange={(checked) =>
+            toggleActivoMutation.mutate({ id: u.id, activo: checked })
+          }
+          onClick={(e) => e.stopPropagation()}
+        />
       ),
     },
     {
@@ -93,7 +132,7 @@ export default function UsuariosPage() {
       header: '',
       className: 'w-16',
       cell: (u) => (
-        <div className="flex items-center gap-1 justify-end">
+        <div className="flex items-center gap-1 justify-end opacity-0 group-hover/row:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="icon"
@@ -107,14 +146,15 @@ export default function UsuariosPage() {
     },
   ]
 
-  const totalCount = data?.count ?? 0
-  const hayMas = page * pageSize < totalCount
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Usuarios"
-        description={`${totalCount} usuarios en el sistema`}
+        description={
+          modo === 'inicial'
+            ? '5 usuarios más recientes'
+            : `${totalCount} usuarios encontrados`
+        }
         action={
           <Button onClick={() => { setEditingUser(null); setDialogOpen(true) }}>
             <Plus data-icon="inline-start" />
@@ -123,7 +163,6 @@ export default function UsuariosPage() {
         }
       />
 
-      {/* Búsqueda + Ver todos */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
@@ -131,27 +170,42 @@ export default function UsuariosPage() {
             placeholder="Buscar por nombre, apellido o email..."
             className="pl-9"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
 
-        {!verTodos && totalCount > PAGE_SIZE_DEFAULT && (
+        <Select value={activoFilterPend} onValueChange={setActivoFilterPend}>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los estados</SelectItem>
+            <SelectItem value="activo">Activos</SelectItem>
+            <SelectItem value="inactivo">Inactivos</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Button variant="outline" size="sm" onClick={handleAplicarFiltros}>
+          <SlidersHorizontal className="size-3.5 mr-1.5" />
+          Aplicar filtros
+        </Button>
+
+        {modo !== 'todos' ? (
           <Button
             variant="outline"
             size="sm"
             className="ml-auto"
-            onClick={() => { setVerTodos(true); setPage(1) }}
+            onClick={handleVerTodos}
           >
             <List className="size-3.5 mr-1.5" />
             Ver todos
           </Button>
-        )}
-        {verTodos && (
+        ) : (
           <Button
             variant="ghost"
             size="sm"
             className="ml-auto text-muted-foreground"
-            onClick={() => { setVerTodos(false); setPage(1) }}
+            onClick={handleMostrarMenos}
           >
             Mostrar menos
           </Button>
@@ -170,27 +224,13 @@ export default function UsuariosPage() {
         />
       )}
 
-      {/* Paginación */}
-      {totalCount > pageSize && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Mostrando {Math.min((page - 1) * pageSize + 1, totalCount)}–
-            {Math.min(page * pageSize, totalCount)} de {totalCount}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
-              Anterior
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!hayMas}
-              onClick={() => setPage(page + 1)}
-            >
-              Siguiente
-            </Button>
-          </div>
-        </div>
+      {mostrarPaginacion && (
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={setPage}
+        />
       )}
 
       <UsuarioDialog

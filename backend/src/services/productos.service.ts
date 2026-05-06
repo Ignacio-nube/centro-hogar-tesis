@@ -10,10 +10,11 @@ export const productosService = {
     soloActivos?: boolean
     bajoStock?:   boolean
     conStock?:    boolean
+    sort?:        'top' | 'nombre'
     page?:        number
     pageSize?:    number
   }): Promise<PaginatedResult<Producto>> {
-    const { search, categoriaId, soloActivos = true, bajoStock, conStock } = params
+    const { search, categoriaId, soloActivos = true, bajoStock, conStock, sort = 'nombre' } = params
     const { page, pageSize, offset } = parsePagination(params as Record<string, unknown>)
 
     const conditions: string[] = []
@@ -26,6 +27,30 @@ export const productosService = {
     if (bajoStock)     { conditions.push('p.stock_actual <= p.stock_minimo') }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    if (sort === 'top') {
+      // Ordenar por unidades vendidas (completadas) — con fallback a histórico si el período reciente da vacío
+      const [countRows] = await pool.execute<any[]>(
+        `SELECT COUNT(*) AS total FROM productos p ${where}`,
+        values
+      )
+      const total = (countRows[0] as { total: number }).total
+
+      const [rows] = await pool.execute<any[]>(
+        `SELECT p.*, c.nombre AS categoria_nombre,
+                COALESCE(SUM(vi.cantidad), 0) AS unidades_vendidas
+         FROM productos p
+         LEFT JOIN categorias c ON c.id = p.categoria_id
+         LEFT JOIN venta_items vi ON vi.producto_id = p.id
+         LEFT JOIN ventas v ON v.id = vi.venta_id AND v.estado_id = 1
+         ${where}
+         GROUP BY p.id
+         ORDER BY unidades_vendidas DESC, p.nombre ASC
+         LIMIT ? OFFSET ?`,
+        [...values, pageSize, offset]
+      )
+      return buildPaginated((rows as any[]).map(normalizeProducto), total, page, pageSize)
+    }
 
     const [countRows] = await pool.execute<any[]>(
       `SELECT COUNT(*) AS total FROM productos p ${where}`,

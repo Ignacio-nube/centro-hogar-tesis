@@ -24,12 +24,14 @@ const stockSchema = z.object({
 export const productosController = {
 
   async list(req: Request, res: Response): Promise<void> {
+    const sortRaw = req.query['sort'] as string | undefined
     const result = await productosService.list({
       search:      req.query['search']      as string | undefined,
       categoriaId: req.query['categoriaId'] ? parseInt(req.query['categoriaId'] as string, 10) : undefined,
       soloActivos: req.query['soloActivos'] !== 'false',
       bajoStock:   req.query['bajoStock']   === 'true',
       conStock:    req.query['conStock']    === 'true',
+      sort:        sortRaw === 'top' ? 'top' : 'nombre',
       page:        req.query['page']     ? parseInt(req.query['page'] as string, 10) : 1,
       pageSize:    req.query['pageSize'] ? parseInt(req.query['pageSize'] as string, 10) : 20,
     })

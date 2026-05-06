@@ -61,6 +61,7 @@ export const clientesService = {
   async list(params?: {
     search?: string
     activo?: boolean
+    sort?: 'recientes' | 'nombre'
     page?: number
     pageSize?: number
   }): Promise<{ data: Cliente[]; count: number }> {
@@ -68,6 +69,7 @@ export const clientesService = {
 
     if (params?.search) query.set('search', params.search)
     if (params?.activo !== undefined) query.set('activo', String(params.activo))
+    if (params?.sort) query.set('sort', params.sort)
     if (params?.page) query.set('page', String(params.page))
     if (params?.pageSize) query.set('pageSize', String(params.pageSize))
 

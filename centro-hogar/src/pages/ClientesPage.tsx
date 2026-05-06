@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, MoreHorizontal, List } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, SlidersHorizontal, List, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ import {
 import { PageHeader } from '@/components/common/PageHeader'
 import { DataTable, type Column } from '@/components/common/DataTable'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { PaginationControls } from '@/components/common/PaginationControls'
 import { ClienteDialog } from '@/features/clientes/components/ClienteDialog'
 import { clientesService } from '@/features/clientes/services/clientesService'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -24,8 +25,10 @@ import { formatDate } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import type { Cliente } from '@/types/app.types'
 
-const PAGE_SIZE_DEFAULT = 5
-const PAGE_SIZE_EXPANDED = 10
+type Modo = 'inicial' | 'buscando' | 'todos'
+
+const PAGE_SIZE_INICIAL = 5
+const PAGE_SIZE_TODOS   = 15
 
 export default function ClientesPage() {
   const qc = useQueryClient()
@@ -34,23 +37,35 @@ export default function ClientesPage() {
   const canWrite = can('clientes.write')
 
   const [search, setSearch] = useState('')
-  const [activoFilter, setActivoFilter] = useState<string>('all')
+  const debouncedSearch = useDebounce(search, 300)
+
+  // filtros pendientes
+  const [activoFilterPend, setActivoFilterPend] = useState<string>('activo')
+  // filtros aplicados
+  const [activoFilter, setActivoFilter] = useState<string>('activo')
+
   const [page, setPage] = useState(1)
-  const [verTodos, setVerTodos] = useState(false)
+  const [modo, setModo] = useState<Modo>('inicial')
+
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const debouncedSearch = useDebounce(search, 300)
-  const pageSize = verTodos ? PAGE_SIZE_EXPANDED : PAGE_SIZE_DEFAULT
+  const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
 
   const activoParam =
     activoFilter === 'activo' ? true : activoFilter === 'inactivo' ? false : undefined
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['clientes', debouncedSearch, activoFilter, page, pageSize],
+    queryKey: ['clientes', debouncedSearch, activoFilter, page, modo],
     queryFn: () =>
-      clientesService.list({ search: debouncedSearch, activo: activoParam, page, pageSize }),
+      clientesService.list({
+        search: debouncedSearch || undefined,
+        activo: activoParam,
+        sort: modo === 'inicial' ? 'recientes' : 'recientes',
+        page,
+        pageSize,
+      }),
   })
 
   const deleteMutation = useMutation({
@@ -72,6 +87,31 @@ export default function ClientesPage() {
     },
     onError: () => toast.error('No se pudo actualizar el estado'),
   })
+
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    setPage(1)
+    setModo(value.trim() ? 'buscando' : 'inicial')
+  }
+
+  function handleAplicarFiltros() {
+    setActivoFilter(activoFilterPend)
+    setPage(1)
+  }
+
+  function handleVerTodos() {
+    setModo('todos')
+    setPage(1)
+  }
+
+  function handleMostrarMenos() {
+    setModo('inicial')
+    setSearch('')
+    setPage(1)
+  }
+
+  const totalCount = data?.count ?? 0
+  const mostrarPaginacion = modo !== 'inicial'
 
   const columns: Column<Cliente>[] = [
     {
@@ -97,26 +137,17 @@ export default function ClientesPage() {
     {
       key: 'activo',
       header: 'Estado',
-      className: 'w-28',
+      className: 'w-20',
       cell: (c) => (
-        <button
-          className="cursor-pointer"
-          title={c.activo ? 'Clic para desactivar' : 'Clic para activar'}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (canWrite) toggleActivoMutation.mutate({ id: c.id, activo: !c.activo })
-          }}
-        >
-          {c.activo ? (
-            <Badge className="bg-green-100 text-green-700 border border-green-200 hover:opacity-80 transition-opacity font-medium">
-              Activo
-            </Badge>
-          ) : (
-            <Badge className="bg-zinc-100 text-zinc-500 border border-zinc-200 hover:opacity-80 transition-opacity font-medium">
-              Inactivo
-            </Badge>
-          )}
-        </button>
+        <Switch
+          size="sm"
+          checked={c.activo}
+          disabled={!canWrite || toggleActivoMutation.isPending}
+          onCheckedChange={(checked) =>
+            toggleActivoMutation.mutate({ id: c.id, activo: checked })
+          }
+          onClick={(e) => e.stopPropagation()}
+        />
       ),
     },
     {
@@ -147,10 +178,7 @@ export default function ClientesPage() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      onClick={() => {
-                        setEditingCliente(c)
-                        setDialogOpen(true)
-                      }}
+                      onClick={() => { setEditingCliente(c); setDialogOpen(true) }}
                     >
                       <Pencil className="size-3.5 mr-2" />
                       Editar
@@ -171,27 +199,14 @@ export default function ClientesPage() {
       : []),
   ]
 
-  const totalCount = data?.count ?? 0
-  const hayMas = page * pageSize < totalCount
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Clientes"
         description={
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className="text-xs font-semibold px-2 py-0.5 rounded-full"
-              style={{
-                backgroundColor: 'var(--brand-muted)',
-                color: 'var(--brand)',
-                border: '1px solid oklch(0.61 0.146 52 / 0.2)',
-              }}
-            >
-              {totalCount}
-            </span>
-            <span className="text-sm text-muted-foreground">clientes registrados</span>
-          </span>
+          modo === 'inicial'
+            ? '5 clientes más recientes'
+            : `${totalCount} clientes encontrados`
         }
         action={
           canWrite ? (
@@ -203,7 +218,6 @@ export default function ClientesPage() {
         }
       />
 
-      {/* Filtros */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
@@ -211,15 +225,13 @@ export default function ClientesPage() {
             placeholder="Buscar por nombre, apellido o DNI..."
             className="pl-9 focus-visible:border-brand"
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
-        <Select
-          value={activoFilter}
-          onValueChange={(v) => { setActivoFilter(v as string); setPage(1) }}
-        >
+
+        <Select value={activoFilterPend} onValueChange={setActivoFilterPend}>
           <SelectTrigger className="w-44">
-            <SelectValue placeholder="Todos los estados" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
@@ -228,23 +240,27 @@ export default function ClientesPage() {
           </SelectContent>
         </Select>
 
-        {!verTodos && totalCount > PAGE_SIZE_DEFAULT && (
+        <Button variant="outline" size="sm" onClick={handleAplicarFiltros}>
+          <SlidersHorizontal className="size-3.5 mr-1.5" />
+          Aplicar filtros
+        </Button>
+
+        {modo !== 'todos' ? (
           <Button
             variant="outline"
             size="sm"
             className="ml-auto"
-            onClick={() => { setVerTodos(true); setPage(1) }}
+            onClick={handleVerTodos}
           >
             <List className="size-3.5 mr-1.5" />
             Ver todos
           </Button>
-        )}
-        {verTodos && (
+        ) : (
           <Button
             variant="ghost"
             size="sm"
             className="ml-auto text-muted-foreground"
-            onClick={() => { setVerTodos(false); setPage(1) }}
+            onClick={handleMostrarMenos}
           >
             Mostrar menos
           </Button>
@@ -264,27 +280,13 @@ export default function ClientesPage() {
         />
       )}
 
-      {/* Paginación */}
-      {totalCount > pageSize && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Mostrando {Math.min((page - 1) * pageSize + 1, totalCount)}–
-            {Math.min(page * pageSize, totalCount)} de {totalCount}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
-              Anterior
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!hayMas}
-              onClick={() => setPage(page + 1)}
-            >
-              Siguiente
-            </Button>
-          </div>
-        </div>
+      {mostrarPaginacion && (
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={setPage}
+        />
       )}
 
       <ClienteDialog

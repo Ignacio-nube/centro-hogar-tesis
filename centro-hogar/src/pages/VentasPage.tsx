@@ -1,18 +1,24 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, List } from 'lucide-react'
+import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, SlidersHorizontal, List } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/PageHeader'
 import { DataTable, type Column } from '@/components/common/DataTable'
+import { PaginationControls } from '@/components/common/PaginationControls'
 import { TicketPDF } from '@/features/reportes/pdf/TicketPDF'
 import { ventasService } from '@/features/ventas/services/ventasService'
 import { formatCurrency, formatDateTime, cn } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import { usePermissions } from '@/hooks/usePermissions'
 import type { Venta, CartItem } from '@/types/app.types'
+
+type Modo = 'inicial' | 'todos'
+
+const PAGE_SIZE_INICIAL = 5
+const PAGE_SIZE_TODOS   = 15
 
 const ESTADO_BADGE: Record<string, string> = {
   completada: 'bg-green-100 text-green-700 border border-green-200',
@@ -56,24 +62,27 @@ function ventaItemsToCartItems(venta: Venta): CartItem[] {
   }))
 }
 
-const PAGE_SIZE_DEFAULT  = 5
-const PAGE_SIZE_EXPANDED = 10
-
 export default function VentasPage() {
   const { can } = usePermissions()
   const navigate = useNavigate()
   const canWrite = can('ventas.write')
 
-  const [page, setPage]           = useState(1)
-  const [estado, setEstado]       = useState('')
-  const [metodoPago, setMetodoPago] = useState('')
-  const [vendedorId, setVendedorId] = useState('')
-  const [verTodos, setVerTodos]   = useState(false)
+  const [modo, setModo] = useState<Modo>('inicial')
+  const [page, setPage] = useState(1)
 
-  const pageSize = verTodos ? PAGE_SIZE_EXPANDED : PAGE_SIZE_DEFAULT
+  // filtros pendientes
+  const [estadoPend, setEstadoPend]           = useState('completada')
+  const [metodoPagoPend, setMetodoPagoPend]   = useState('')
+  const [vendedorIdPend, setVendedorIdPend]   = useState('')
+  // filtros aplicados
+  const [estado, setEstado]                   = useState('completada')
+  const [metodoPago, setMetodoPago]           = useState('')
+  const [vendedorId, setVendedorId]           = useState('')
+
+  const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['ventas', page, pageSize, estado, metodoPago, vendedorId],
+    queryKey: ['ventas', page, pageSize, estado, metodoPago, vendedorId, modo],
     queryFn: () =>
       ventasService.list({
         page,
@@ -89,6 +98,26 @@ export default function VentasPage() {
     queryFn: () => ventasService.listVendedores(),
     staleTime: 1000 * 60 * 10,
   })
+
+  function handleAplicarFiltros() {
+    setEstado(estadoPend)
+    setMetodoPago(metodoPagoPend)
+    setVendedorId(vendedorIdPend)
+    setPage(1)
+  }
+
+  function handleVerTodos() {
+    setModo('todos')
+    setPage(1)
+  }
+
+  function handleMostrarMenos() {
+    setModo('inicial')
+    setPage(1)
+  }
+
+  const totalCount = data?.count ?? 0
+  const mostrarPaginacion = modo !== 'inicial'
 
   const columns: Column<Venta>[] = [
     {
@@ -163,14 +192,15 @@ export default function VentasPage() {
     },
   ]
 
-  const totalCount = data?.count ?? 0
-  const hayMas = page * pageSize < totalCount
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Ventas"
-        description={`${totalCount} ventas registradas`}
+        description={
+          modo === 'inicial'
+            ? '5 ventas más recientes'
+            : `${totalCount} ventas encontradas`
+        }
         action={
           canWrite ? (
             <Button render={<Link to="/ventas/nueva" />} nativeButton={false}>
@@ -184,8 +214,8 @@ export default function VentasPage() {
       {/* Filtros */}
       <div className="flex items-center gap-2 flex-wrap">
         <Select
-          value={vendedorId || 'all'}
-          onValueChange={(v) => { setVendedorId(v === 'all' ? '' : v); setPage(1) }}
+          value={vendedorIdPend || 'all'}
+          onValueChange={(v) => setVendedorIdPend(v === 'all' ? '' : v)}
         >
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Todos los vendedores" />
@@ -199,11 +229,11 @@ export default function VentasPage() {
         </Select>
 
         <Select
-          value={estado || 'all'}
-          onValueChange={(v) => { setEstado(v === 'all' ? '' : v); setPage(1) }}
+          value={estadoPend || 'all'}
+          onValueChange={(v) => setEstadoPend(v === 'all' ? '' : v)}
         >
           <SelectTrigger className="w-40">
-            <SelectValue placeholder="Todos los estados" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
@@ -213,8 +243,8 @@ export default function VentasPage() {
         </Select>
 
         <Select
-          value={metodoPago || 'all'}
-          onValueChange={(v) => { setMetodoPago(v === 'all' ? '' : v); setPage(1) }}
+          value={metodoPagoPend || 'all'}
+          onValueChange={(v) => setMetodoPagoPend(v === 'all' ? '' : v)}
         >
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Todos los métodos" />
@@ -227,23 +257,27 @@ export default function VentasPage() {
           </SelectContent>
         </Select>
 
-        {!verTodos && totalCount > PAGE_SIZE_DEFAULT && (
+        <Button variant="outline" size="sm" onClick={handleAplicarFiltros}>
+          <SlidersHorizontal className="size-3.5 mr-1.5" />
+          Aplicar filtros
+        </Button>
+
+        {modo !== 'todos' ? (
           <Button
             variant="outline"
             size="sm"
             className="ml-auto"
-            onClick={() => { setVerTodos(true); setPage(1) }}
+            onClick={handleVerTodos}
           >
             <List className="size-3.5 mr-1.5" />
             Ver todos
           </Button>
-        )}
-        {verTodos && (
+        ) : (
           <Button
             variant="ghost"
             size="sm"
             className="ml-auto text-muted-foreground"
-            onClick={() => { setVerTodos(false); setPage(1) }}
+            onClick={handleMostrarMenos}
           >
             Mostrar menos
           </Button>
@@ -263,27 +297,13 @@ export default function VentasPage() {
         />
       )}
 
-      {/* Paginación */}
-      {totalCount > pageSize && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Mostrando {Math.min((page - 1) * pageSize + 1, totalCount)}–
-            {Math.min(page * pageSize, totalCount)} de {totalCount}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
-              Anterior
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!hayMas}
-              onClick={() => setPage(page + 1)}
-            >
-              Siguiente
-            </Button>
-          </div>
-        </div>
+      {mostrarPaginacion && (
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={setPage}
+        />
       )}
     </div>
   )
@@ -291,7 +311,7 @@ export default function VentasPage() {
 
 // ─── Lazy ticket download button ──────────────────────────────────────────────
 function TicketDownloadButton({ venta }: { venta: Venta }) {
-  const [ready, setReady]       = useState(false)
+  const [ready, setReady]         = useState(false)
   const [ventaFull, setVentaFull] = useState<Venta | null>(null)
 
   async function loadAndDownload(e: React.MouseEvent) {
