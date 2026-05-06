@@ -161,7 +161,7 @@ El frontend corre en `http://localhost:5173`.
 
 ## Funcionalidades
 
-- **Dashboard** — métricas del día, alertas de stock bajo, últimas ventas
+- **Dashboard** — métricas del día, gráfico de ventas últimos 14 días, alertas de stock bajo, donut interactivo de productos por categoría (último mes) con panel lateral de detalle, top 5 vendedores del mes
 - **Clientes** — CRUD completo, historial de compras por cliente
 - **Productos** — CRUD con categorías, control de stock e imágenes
 - **Ventas** — wizard multi-paso (cliente → carrito → pago → confirmar), descarga de ticket PDF

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState, useCallback } from 'react'
 import { TrendingUp, ShoppingCart, Users, AlertTriangle, RefreshCw, type LucideIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -75,6 +76,26 @@ function DonutTooltip({ active, payload }: any) {
   )
 }
 
+// ─── Active shape del donut (slice seleccionado se expande) ──────────────────
+function ActiveSlice(props: any) {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props
+  // importamos sector de recharts dinámicamente via el prop shape
+  const { Sector } = require('recharts')
+  return (
+    <Sector
+      cx={cx}
+      cy={cy}
+      innerRadius={innerRadius - 2}
+      outerRadius={outerRadius + 8}
+      startAngle={startAngle}
+      endAngle={endAngle}
+      fill={fill}
+      stroke="white"
+      strokeWidth={2}
+    />
+  )
+}
+
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 function KpiCard({
   title, value, description, icon: Icon, isLoading, isError, onRetry, highlighted = false,
@@ -123,13 +144,21 @@ function KpiCard({
   )
 }
 
-// ─── Donut anidado ────────────────────────────────────────────────────────────
-function DonutCategorias({ data, isLoading, isError, onRetry }: {
+// ─── Gráfico: donut categorías + panel lateral productos ─────────────────────
+const ALL_KEY = '__all__'
+
+function GraficoCategorias({ data, isLoading, isError, onRetry }: {
   data: DashboardData | undefined
   isLoading: boolean
   isError: boolean
   onRetry: () => void
 }) {
+  const [selectedCat, setSelectedCat] = useState<string>(ALL_KEY)
+
+  const handleSliceClick = useCallback((entry: any) => {
+    setSelectedCat((prev) => prev === entry.name ? ALL_KEY : entry.name)
+  }, [])
+
   if (isLoading) return <Skeleton className="h-72 w-full" />
   if (isError) return (
     <div className="flex h-72 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -142,93 +171,154 @@ function DonutCategorias({ data, isLoading, isError, onRetry }: {
   )
   if (!data) return null
 
-  const cats    = data.categorias_top
-  const prods   = data.productos_por_categoria
+  const cats  = data.categorias_top
+  const prods = data.productos_por_categoria
 
-  // Datos anillo interior (categorías)
-  const innerData = cats.map((c, i) => ({
+  if (cats.length === 0) {
+    return (
+      <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">
+        Sin datos de ventas en el último mes
+      </div>
+    )
+  }
+
+  // Datos del donut (solo categorías)
+  const donutData = cats.map((c, i) => ({
     name:  c.categoria,
     value: c.unidades,
     fill:  getCatColor(i, 0),
+    index: i,
   }))
 
-  // Datos anillo exterior (productos por categoría), coloreados por su categoría madre
-  const outerData = prods.map((p) => {
-    const catIdx = cats.findIndex((c) => c.categoria === p.categoria)
-    const prodIdx = prods
-      .filter((x) => x.categoria === p.categoria)
-      .findIndex((x) => x.producto === p.producto)
-    return {
-      name:  p.producto === 'Otros' ? `Otros (${p.categoria})` : p.producto,
-      value: p.unidades,
-      fill:  getCatColor(catIdx, prodIdx + 1),
+  const activeIndex = donutData.findIndex((d) => d.name === selectedCat)
+
+  // Datos del panel lateral
+  const panelData: { producto: string; unidades: number; fill: string }[] = (() => {
+    if (selectedCat === ALL_KEY) {
+      // Suma todas las unidades por producto (excluyendo "Otros") y toma top 5
+      const totals: Record<string, number> = {}
+      for (const p of prods) {
+        if (p.producto === 'Otros') continue
+        totals[p.producto] = (totals[p.producto] ?? 0) + p.unidades
+      }
+      return Object.entries(totals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([producto, unidades]) => ({ producto, unidades, fill: 'var(--brand)' }))
     }
-  })
+    const catIdx = cats.findIndex((c) => c.categoria === selectedCat)
+    return prods
+      .filter((p) => p.categoria === selectedCat)
+      .map((p, i) => ({
+        producto: p.producto,
+        unidades: p.unidades,
+        fill:     getCatColor(catIdx, i + 1),
+      }))
+  })()
 
-  // Leyenda solo para categorías (anillo interior)
-  const renderLegend = () => (
-    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 mt-3">
-      {innerData.map((entry) => (
-        <div key={entry.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="inline-block size-2.5 rounded-sm shrink-0" style={{ backgroundColor: entry.fill }} />
-          {entry.name}
-        </div>
-      ))}
-    </div>
-  )
+  const panelTitle = selectedCat === ALL_KEY
+    ? 'Más vendidos — todos'
+    : `Top productos · ${selectedCat}`
 
-  const isEmpty = innerData.length === 0
+  const maxUnidades = Math.max(...panelData.map((p) => p.unidades), 1)
 
   return (
-    <div>
-      {isEmpty ? (
-        <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">
-          Sin datos de ventas aún
+    <div className="flex flex-col gap-4 sm:flex-row sm:gap-0">
+      {/* ── Donut ── */}
+      <div className="flex flex-col items-center sm:w-1/2">
+        <ChartContainer config={{}} className="h-56 w-full max-w-xs">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={donutData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius="42%"
+                outerRadius="65%"
+                paddingAngle={3}
+                strokeWidth={0}
+                cursor="pointer"
+                {...(activeIndex >= 0 ? { activeIndex, activeShape: ActiveSlice } : {})}
+                onClick={handleSliceClick}
+              >
+                {donutData.map((entry, i) => (
+                  <Cell
+                    key={i}
+                    fill={entry.fill}
+                    opacity={selectedCat === ALL_KEY || selectedCat === entry.name ? 1 : 0.35}
+                  />
+                ))}
+              </Pie>
+              <Tooltip content={<DonutTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+
+        {/* Leyenda */}
+        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 mt-1">
+          {donutData.map((entry) => (
+            <button
+              key={entry.name}
+              onClick={() => setSelectedCat((prev) => prev === entry.name ? ALL_KEY : entry.name)}
+              className={cn(
+                'flex items-center gap-1.5 text-xs rounded px-1.5 py-0.5 transition-all',
+                selectedCat === entry.name
+                  ? 'font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <span
+                className="inline-block size-2.5 rounded-sm shrink-0 transition-all"
+                style={{
+                  backgroundColor: entry.fill,
+                  opacity: selectedCat === ALL_KEY || selectedCat === entry.name ? 1 : 0.4,
+                }}
+              />
+              {entry.name}
+            </button>
+          ))}
         </div>
-      ) : (
-        <>
-          <ChartContainer config={{}} className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                {/* Anillo interior — categorías */}
-                <Pie
-                  data={innerData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius="30%"
-                  outerRadius="50%"
-                  paddingAngle={2}
-                  strokeWidth={0}
-                >
-                  {innerData.map((entry, i) => (
-                    <Cell key={i} fill={entry.fill} />
-                  ))}
-                </Pie>
-                {/* Anillo exterior — productos */}
-                <Pie
-                  data={outerData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius="54%"
-                  outerRadius="72%"
-                  paddingAngle={1}
-                  strokeWidth={0}
-                >
-                  {outerData.map((entry, i) => (
-                    <Cell key={i} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip content={<DonutTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-          {renderLegend()}
-        </>
-      )}
+        {selectedCat !== ALL_KEY && (
+          <button
+            onClick={() => setSelectedCat(ALL_KEY)}
+            className="mt-2 text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Ver todos
+          </button>
+        )}
+      </div>
+
+      {/* ── Panel lateral ── */}
+      <div className="flex flex-col sm:w-1/2 sm:border-l sm:pl-5 sm:ml-1">
+        <p className="text-xs font-semibold text-foreground mb-3 truncate">{panelTitle}</p>
+        {panelData.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Sin datos para esta categoría</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {panelData.map((p, i) => {
+              const pct = Math.round((p.unidades / maxUnidades) * 100)
+              return (
+                <div key={i} className="flex flex-col gap-0.5">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-xs text-foreground truncate max-w-[60%]">{p.producto}</span>
+                    <span className="text-xs font-semibold tabular-nums text-muted-foreground shrink-0">
+                      {p.unidades} u
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-zinc-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: p.fill }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -468,16 +558,16 @@ export default function DashboardPage() {
 
       {/* Fila 3: Donut anidado + Top vendedores */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Donut: categorías (interior) + productos (exterior) */}
+        {/* Donut categorías + panel productos */}
         <Card className="lg:col-span-2 rounded-xl">
           <CardHeader>
             <CardTitle className="text-base">Productos más vendidos por categoría</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Último mes · Anillo interior: categorías · Anillo exterior: productos
+              Último mes · Hacé click en una categoría para filtrar
             </p>
           </CardHeader>
           <CardContent>
-            <DonutCategorias
+            <GraficoCategorias
               data={dashData}
               isLoading={loadingDash}
               isError={errorDash}
