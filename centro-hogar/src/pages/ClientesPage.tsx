@@ -62,7 +62,7 @@ export default function ClientesPage() {
       clientesService.list({
         search: debouncedSearch || undefined,
         activo: activoParam,
-        sort: 'recientes',
+        sort: modo === 'todos' ? 'nombre' : 'recientes',
         page,
         pageSize,
       }),

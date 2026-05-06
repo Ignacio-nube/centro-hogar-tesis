@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, SlidersHorizontal, List } from 'lucide-react'
+import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, SlidersHorizontal, List, Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/PageHeader'
 import { DataTable, type Column } from '@/components/common/DataTable'
@@ -13,9 +14,10 @@ import { ventasService } from '@/features/ventas/services/ventasService'
 import { formatCurrency, formatDateTime, cn } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useDebounce } from '@/hooks/useDebounce'
 import type { Venta, CartItem } from '@/types/app.types'
 
-type Modo = 'inicial' | 'todos'
+type Modo = 'inicial' | 'buscando' | 'todos'
 
 const PAGE_SIZE_INICIAL = 5
 const PAGE_SIZE_TODOS   = 15
@@ -70,6 +72,10 @@ export default function VentasPage() {
   const [modo, setModo] = useState<Modo>('inicial')
   const [page, setPage] = useState(1)
 
+  // búsqueda con debounce
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
+
   // filtros pendientes
   const [estadoPend, setEstadoPend]           = useState('completada')
   const [metodoPagoPend, setMetodoPagoPend]   = useState('')
@@ -82,15 +88,17 @@ export default function VentasPage() {
   const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['ventas', page, pageSize, estado, metodoPago, vendedorId, modo],
+    queryKey: ['ventas', debouncedSearch, page, pageSize, estado, metodoPago, vendedorId, modo],
     queryFn: () =>
       ventasService.list({
         page,
         pageSize,
+        search:     debouncedSearch || undefined,
         estado:     estado     || undefined,
         metodoPago: metodoPago || undefined,
         vendedorId: vendedorId || undefined,
       }),
+    staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
   })
 
   const { data: usuarios } = useQuery({
@@ -98,6 +106,16 @@ export default function VentasPage() {
     queryFn: () => ventasService.listVendedores(),
     staleTime: 1000 * 60 * 10,
   })
+
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    setPage(1)
+    if (value.trim()) {
+      setModo('buscando')
+    } else if (modo === 'buscando') {
+      setModo('inicial')
+    }
+  }
 
   function handleAplicarFiltros() {
     setEstado(estadoPend)
@@ -113,6 +131,7 @@ export default function VentasPage() {
 
   function handleMostrarMenos() {
     setModo('inicial')
+    setSearch('')
     setPage(1)
   }
 
@@ -199,6 +218,8 @@ export default function VentasPage() {
         description={
           modo === 'inicial'
             ? '5 ventas más recientes'
+            : modo === 'buscando'
+            ? `Buscando "${search}"`
             : `${totalCount} ventas encontradas`
         }
         action={
@@ -210,6 +231,17 @@ export default function VentasPage() {
           ) : undefined
         }
       />
+
+      {/* Buscador */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nº de venta o nombre de cliente..."
+          className="pl-9"
+          value={search}
+          onChange={(e) => handleSearchChange(e.target.value)}
+        />
+      </div>
 
       {/* Filtros */}
       <div className="flex items-center gap-2 flex-wrap">

@@ -25,7 +25,8 @@ export function Step1ClienteSelect({ onSelect, onSkip }: Step1Props) {
     queryFn: () =>
       search.length >= 2
         ? clientesService.search(search)
-        : clientesService.list({ pageSize: 8 }).then((r) => r.data),
+        : clientesService.list({ pageSize: 8, sort: 'recientes', activo: true }).then((r) => r.data),
+    staleTime: search.length >= 2 ? 0 : 1000 * 60 * 5,
     enabled: true,
   })
 

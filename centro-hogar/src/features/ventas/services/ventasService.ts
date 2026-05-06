@@ -119,10 +119,11 @@ export const ventasService = {
     metodoPago?: string
     fechaDesde?: string
     fechaHasta?: string
+    search?: string
     page?: number
     pageSize?: number
   }): Promise<{ data: Venta[]; count: number }> {
-    const { vendedorId, estado, metodoPago, fechaDesde, fechaHasta, page = 1, pageSize = 20 } = params ?? {}
+    const { vendedorId, estado, metodoPago, fechaDesde, fechaHasta, search, page = 1, pageSize = 20 } = params ?? {}
     const q = new URLSearchParams()
 
     const vendedorIdNum = vendedorId ? parseInt(vendedorId, 10) : NaN
@@ -134,6 +135,7 @@ export const ventasService = {
     if (metodoPago) q.set('metodoPagoId', String(toMetodoPagoId(metodoPago)))
     if (fechaDesde) q.set('fechaDesde', fechaDesde)
     if (fechaHasta) q.set('fechaHasta', fechaHasta)
+    if (search)     q.set('search', search)
     q.set('page', String(page))
     q.set('pageSize', String(pageSize))
 
