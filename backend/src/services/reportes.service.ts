@@ -159,8 +159,8 @@ export const reportesService = {
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
 
-  /** Top N categorías por unidades vendidas (histórico). Agrupa el resto en "Otros". */
-  async categoriasPorVentas(topN = 5): Promise<{ categoria: string; unidades: number }[]> {
+  /** Top N categorías por unidades vendidas en el período. Agrupa el resto en "Otros". */
+  async categoriasPorVentas(fechaDesde: string, fechaHasta: string, topN = 5): Promise<{ categoria: string; unidades: number }[]> {
     const [rows] = await pool.execute<any[]>(
       `SELECT COALESCE(c.nombre, 'Sin categoría') AS categoria,
               SUM(vi.cantidad) AS unidades
@@ -168,8 +168,10 @@ export const reportesService = {
        JOIN productos p  ON p.id = vi.producto_id
        LEFT JOIN categorias c ON c.id = p.categoria_id
        JOIN ventas v     ON v.id = vi.venta_id AND v.estado_id = 1
+                        AND v.created_at BETWEEN ? AND ?
        GROUP BY p.categoria_id, c.nombre
        ORDER BY unidades DESC`,
+      [fechaDesde, fechaHasta],
     )
     const parsed = rows.map((r: any) => ({
       categoria: String(r.categoria),
@@ -182,10 +184,10 @@ export const reportesService = {
   },
 
   /**
-   * Top M productos por cada categoría (solo las del topN de categorías).
+   * Top M productos por cada categoría (solo las del topN de categorías) en el período.
    * Productos menores de cada categoría se agrupan como "Otros".
    */
-  async productosPorCategoria(categorias: string[], topM = 3): Promise<
+  async productosPorCategoria(categorias: string[], fechaDesde: string, fechaHasta: string, topM = 3): Promise<
     { categoria: string; producto: string; unidades: number }[]
   > {
     if (categorias.length === 0) return []
@@ -202,10 +204,11 @@ export const reportesService = {
        JOIN productos p  ON p.id = vi.producto_id
        LEFT JOIN categorias c ON c.id = p.categoria_id
        JOIN ventas v     ON v.id = vi.venta_id AND v.estado_id = 1
+                        AND v.created_at BETWEEN ? AND ?
        WHERE COALESCE(c.nombre, 'Sin categoría') IN (${placeholders})
        GROUP BY p.categoria_id, c.nombre, p.id, p.nombre
        ORDER BY categoria ASC, unidades DESC`,
-      realCats,
+      [fechaDesde, fechaHasta, ...realCats],
     )
 
     // Agrupar por categoría y tomar top M + Otros
@@ -227,8 +230,8 @@ export const reportesService = {
     return result
   },
 
-  /** Top N vendedores histórico por monto total. */
-  async vendedoresTop(limit = 5): Promise<
+  /** Top N vendedores en el período por monto total. */
+  async vendedoresTop(fechaDesde: string, fechaHasta: string, limit = 5): Promise<
     { vendedor: string; total_ventas: number; monto_total: number }[]
   > {
     const [rows] = await pool.execute<any[]>(
@@ -237,11 +240,11 @@ export const reportesService = {
               COALESCE(SUM(v.total_final), 0)   AS monto_total
        FROM ventas v
        JOIN usuarios u ON u.id = v.vendedor_id
-       WHERE v.estado_id = 1
+       WHERE v.estado_id = 1 AND v.created_at BETWEEN ? AND ?
        GROUP BY u.id
        ORDER BY monto_total DESC
        LIMIT ?`,
-      [limit],
+      [fechaDesde, fechaHasta, limit],
     )
     return rows.map((r: any) => ({
       vendedor:     String(r.vendedor),
@@ -250,16 +253,24 @@ export const reportesService = {
     }))
   },
 
-  /** Datos del dashboard en una sola llamada. */
+  /** Datos del dashboard en una sola llamada (último mes). */
   async dashboardData() {
     const TOP_CATS  = 5
     const TOP_PRODS = 3
+
+    // Rango: últimos 30 días hasta hoy (inclusive) en UTC-3
+    const ahora      = new Date()
+    const fechaHasta = ahora.toISOString().slice(0, 10) + ' 23:59:59'
+    const hace30     = new Date(ahora)
+    hace30.setDate(hace30.getDate() - 29)
+    const fechaDesde = hace30.toISOString().slice(0, 10) + ' 00:00:00'
+
     const [categoriasRaw, vendedores] = await Promise.all([
-      this.categoriasPorVentas(TOP_CATS),
-      this.vendedoresTop(5),
+      this.categoriasPorVentas(fechaDesde, fechaHasta, TOP_CATS),
+      this.vendedoresTop(fechaDesde, fechaHasta, 5),
     ])
     const catNames  = categoriasRaw.map((c) => c.categoria)
-    const productos = await this.productosPorCategoria(catNames, TOP_PRODS)
+    const productos = await this.productosPorCategoria(catNames, fechaDesde, fechaHasta, TOP_PRODS)
     return {
       categorias_top:          categoriasRaw,
       productos_por_categoria: productos,

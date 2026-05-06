@@ -473,7 +473,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-base">Productos más vendidos por categoría</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Anillo interior: categorías · Anillo exterior: productos
+              Último mes · Anillo interior: categorías · Anillo exterior: productos
             </p>
           </CardHeader>
           <CardContent>
@@ -490,7 +490,7 @@ export default function DashboardPage() {
         <Card className="rounded-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Top vendedores</CardTitle>
-            <p className="text-xs text-muted-foreground">Por monto total histórico</p>
+            <p className="text-xs text-muted-foreground">Por monto total — último mes</p>
           </CardHeader>
           <CardContent>
             <CardVendedores
