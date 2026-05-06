@@ -53,6 +53,7 @@ export default function UsuariosPage() {
         page,
         pageSize,
       }),
+    staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
   })
 
   const toggleActivoMutation = useMutation({

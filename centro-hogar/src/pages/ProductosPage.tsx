@@ -69,6 +69,7 @@ export default function ProductosPage() {
         page,
         pageSize,
       }),
+    staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
   })
 
   const { data: categorias } = useQuery({

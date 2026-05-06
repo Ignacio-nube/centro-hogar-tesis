@@ -62,10 +62,11 @@ export default function ClientesPage() {
       clientesService.list({
         search: debouncedSearch || undefined,
         activo: activoParam,
-        sort: modo === 'inicial' ? 'recientes' : 'recientes',
+        sort: 'recientes',
         page,
         pageSize,
       }),
+    staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
   })
 
   const deleteMutation = useMutation({

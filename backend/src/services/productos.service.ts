@@ -29,23 +29,26 @@ export const productosService = {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
     if (sort === 'top') {
-      // Ordenar por unidades vendidas (completadas) — con fallback a histórico si el período reciente da vacío
       const [countRows] = await pool.execute<any[]>(
         `SELECT COUNT(*) AS total FROM productos p ${where}`,
         values
       )
       const total = (countRows[0] as { total: number }).total
 
+      // Subquery pre-agrupada: evita GROUP BY sobre toda la tabla en el outer query
       const [rows] = await pool.execute<any[]>(
         `SELECT p.*, c.nombre AS categoria_nombre,
-                COALESCE(SUM(vi.cantidad), 0) AS unidades_vendidas
+                COALESCE(vi_agg.unidades_vendidas, 0) AS unidades_vendidas
          FROM productos p
          LEFT JOIN categorias c ON c.id = p.categoria_id
-         LEFT JOIN venta_items vi ON vi.producto_id = p.id
-         LEFT JOIN ventas v ON v.id = vi.venta_id AND v.estado_id = 1
+         LEFT JOIN (
+           SELECT vi.producto_id, SUM(vi.cantidad) AS unidades_vendidas
+           FROM venta_items vi
+           INNER JOIN ventas v ON v.id = vi.venta_id AND v.estado_id = 1
+           GROUP BY vi.producto_id
+         ) vi_agg ON vi_agg.producto_id = p.id
          ${where}
-         GROUP BY p.id
-         ORDER BY unidades_vendidas DESC, p.nombre ASC
+         ORDER BY vi_agg.unidades_vendidas DESC, p.nombre ASC
          LIMIT ? OFFSET ?`,
         [...values, pageSize, offset]
       )

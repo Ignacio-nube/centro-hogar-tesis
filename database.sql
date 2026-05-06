@@ -339,6 +339,7 @@ CREATE TABLE venta_items (
   KEY idx_vitems_venta            (venta_id),
   KEY idx_vitems_producto         (producto_id),
   KEY idx_vitems_producto_venta   (producto_id, venta_id),
+  KEY idx_vitems_venta_prod_cant  (venta_id, producto_id, cantidad),
   CONSTRAINT fk_vitems_venta
     FOREIGN KEY (venta_id)    REFERENCES ventas    (id) ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_vitems_producto

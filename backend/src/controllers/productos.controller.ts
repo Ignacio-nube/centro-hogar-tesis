@@ -59,7 +59,8 @@ export const productosController = {
     const id = parseInt(req.params['id'] ?? '', 10)
     if (isNaN(id)) { r.badRequest(res, 'ID inválido'); return }
 
-    const parsed = createSchema.partial().safeParse(req.body)
+    const updateSchema = createSchema.partial().extend({ activo: z.boolean().optional() })
+    const parsed = updateSchema.safeParse(req.body)
     if (!parsed.success) { r.badRequest(res, parsed.error.errors[0]?.message ?? 'Datos inválidos'); return }
 
     const producto = await productosService.update(id, parsed.data)
