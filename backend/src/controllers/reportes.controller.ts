@@ -13,6 +13,11 @@ function getDateRange(req: Request): { fechaDesde: string; fechaHasta: string } 
 
 export const reportesController = {
 
+  async dashboard(_req: Request, res: Response): Promise<void> {
+    const data = await reportesService.dashboardData()
+    r.ok(res, data)
+  },
+
   async resumen(req: Request, res: Response): Promise<void> {
     const { fechaDesde, fechaHasta } = getDateRange(req)
     const data = await reportesService.resumenCompleto(fechaDesde, fechaHasta)

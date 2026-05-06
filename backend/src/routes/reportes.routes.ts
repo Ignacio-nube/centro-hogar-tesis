@@ -5,8 +5,11 @@ import { adminOStock } from '../middleware/roles.middleware'
 
 const router = Router()
 
-router.use(authMiddleware, adminOStock)
+// Dashboard visible para todos los roles autenticados
+router.get('/dashboard', authMiddleware, reportesController.dashboard)
 
+// El resto solo admin/encargado
+router.use(authMiddleware, adminOStock)
 router.get('/resumen',       reportesController.resumen)
 router.get('/ventas',        reportesController.resumenVentas)
 router.get('/productos-top', reportesController.productosTop)

@@ -51,6 +51,30 @@ export interface ResumenCompleto {
   ventas_por_dia: VentaDia[]
 }
 
+// ── Dashboard ──────────────────────────────────────────────────────────────
+export interface CategoriaTop {
+  categoria: string
+  unidades: number
+}
+
+export interface ProductoPorCategoria {
+  categoria: string
+  producto: string
+  unidades: number
+}
+
+export interface VendedorTop {
+  vendedor: string
+  total_ventas: number
+  monto_total: number
+}
+
+export interface DashboardData {
+  categorias_top:          CategoriaTop[]
+  productos_por_categoria: ProductoPorCategoria[]
+  vendedores_top:          VendedorTop[]
+}
+
 export const reportesService = {
   async getResumen(fechaDesde: string, fechaHasta: string): Promise<ResumenCompleto> {
     return api.get<ResumenCompleto>(
@@ -68,5 +92,9 @@ export const reportesService = {
       categoria: string
       bajo_stock: boolean
     }>>('/reportes/stock')
+  },
+
+  async getDashboardData(): Promise<DashboardData> {
+    return api.get<DashboardData>('/reportes/dashboard')
   },
 }
