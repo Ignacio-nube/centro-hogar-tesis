@@ -161,15 +161,21 @@ export default function ClientesPage() {
       header: 'Estado',
       className: 'w-20',
       cell: (c) => (
-        <Switch
-          size="sm"
-          checked={c.activo}
-          disabled={!canWrite || toggleActivoMutation.isPending}
-          onCheckedChange={(checked) =>
-            toggleActivoMutation.mutate({ id: c.id, activo: checked })
-          }
+        // Wrapper con stopPropagation para evitar que Radix deje burbujear
+        // el click al row y navegue al detalle (mismo patrón que la columna actions).
+        <div
           onClick={(e) => e.stopPropagation()}
-        />
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <Switch
+            size="sm"
+            checked={c.activo}
+            disabled={!canWrite || toggleActivoMutation.isPending}
+            onCheckedChange={(checked) =>
+              toggleActivoMutation.mutate({ id: c.id, activo: checked })
+            }
+          />
+        </div>
       ),
     },
     {

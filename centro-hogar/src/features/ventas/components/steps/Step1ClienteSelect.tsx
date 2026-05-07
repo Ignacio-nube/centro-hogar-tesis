@@ -20,8 +20,10 @@ export function Step1ClienteSelect({ onSelect, onSkip }: Step1Props) {
   const [search, setSearch] = useState('')
   const [newClienteOpen, setNewClienteOpen] = useState(false)
 
+  // QueryKey compartida con prefix ['clientes', ...] para que la invalidación
+  // desde /clientes (o desde aquí mismo al crear) refresque ambos cachés.
   const { data: clientes, isLoading, isError, refetch } = useQuery({
-    queryKey: ['clientes-search', search],
+    queryKey: ['clientes', 'wizard', search],
     queryFn: () =>
       search.length >= 2
         ? clientesService.search(search)

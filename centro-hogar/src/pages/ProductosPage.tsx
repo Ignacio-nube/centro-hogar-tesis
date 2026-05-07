@@ -193,15 +193,19 @@ export default function ProductosPage() {
       header: 'Estado',
       className: 'w-20',
       cell: (p) => (
-        <Switch
-          size="sm"
-          checked={p.activo}
-          disabled={!canWrite || toggleActivoMutation.isPending}
-          onCheckedChange={(checked) =>
-            toggleActivoMutation.mutate({ id: p.id, activo: checked })
-          }
+        <div
           onClick={(e) => e.stopPropagation()}
-        />
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <Switch
+            size="sm"
+            checked={p.activo}
+            disabled={!canWrite || toggleActivoMutation.isPending}
+            onCheckedChange={(checked) =>
+              toggleActivoMutation.mutate({ id: p.id, activo: checked })
+            }
+          />
+        </div>
       ),
     },
     ...(canWrite

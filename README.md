@@ -24,9 +24,10 @@ Panel de administración web para una mueblería. Permite gestionar clientes, pr
 ## Estructura del monorepo
 
 ```
-tesis/
+centro-hogar-tesis/
 ├── centro-hogar/   # Frontend — React SPA
 ├── backend/        # Backend — API REST Express
+├── scripts/        # Scripts PowerShell para mover la DB entre PCs
 ├── database.sql    # Esquema MySQL completo
 ├── seed.sql        # Datos de prueba iniciales
 └── datos.txt       # Credenciales de prueba
@@ -42,7 +43,7 @@ tesis/
 
 ---
 
-## Cómo levantar el proyecto localmente
+## Cómo levantar el proyecto en otra PC
 
 ### 1. Clonar el repositorio
 
@@ -51,13 +52,65 @@ git clone https://github.com/Ignacio-nube/centro-hogar-tesis.git
 cd centro-hogar-tesis
 ```
 
-### 2. Configurar la base de datos en phpMyAdmin
+### 2. Crear la base de datos
+
+Hay dos formas: con los scripts (recomendado, automático) o con phpMyAdmin (manual). Elegí una.
+
+#### Opción A — Con los scripts de PowerShell (recomendado)
+
+Los scripts en `scripts/` automatizan la creación y migración de la DB entre PCs.
+
+**Pre-requisito**: agregar `mysql.exe` y `mysqldump.exe` al PATH. Si usás XAMPP:
+
+```powershell
+setx PATH "$env:PATH;C:\xampp\mysql\bin"
+```
+
+Cerrá la terminal y abrí una nueva para que tome el cambio.
+
+**A.1) Si querés empezar con la base vacía** (solo estructura, sin datos):
+
+```powershell
+cd scripts
+.\db-setup.ps1
+```
+
+Por defecto se conecta a `localhost:3306` con usuario `root` sin contraseña. Si tu MySQL tiene otras credenciales:
+
+```powershell
+.\db-setup.ps1 -DbUser admin -DbPass "miclave"
+```
+
+El usuario admin inicial se crea automáticamente al arrancar el backend (paso 4), tomando los valores de `ADMIN_EMAIL` y `ADMIN_PASSWORD` del `.env`.
+
+**A.2) Si querés migrar la base desde otra PC con todos los datos reales**:
+
+En la PC origen (la que ya tiene la app funcionando):
+
+```powershell
+cd scripts
+.\db-export.ps1
+```
+
+Esto genera `backups/centro_hogar_<fecha>_completo.sql` con estructura, datos, triggers y vistas. Copiá ese archivo a la PC destino (USB, Drive, etc.).
+
+En la PC destino, parado en `scripts/`:
+
+```powershell
+.\db-import.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
+```
+
+Te va a pedir confirmación antes de ejecutar.
+
+> Más detalles en [`scripts/README.md`](scripts/README.md), incluyendo qué hacer si `mysql.exe` no está en el PATH.
+
+#### Opción B — Manual con phpMyAdmin
 
 1. Abrí phpMyAdmin (normalmente en `http://localhost/phpmyadmin`)
 2. Creá una nueva base de datos llamada **`centro_hogar`** con cotejamiento `utf8mb4_unicode_ci`
-3. Seleccioná la base de datos `centro_hogar` y andá a la pestaña **Importar**
-4. Importá el archivo `database.sql` (crea todas las tablas, vistas y triggers)
-5. Importá el archivo `seed.sql` (carga los datos de prueba)
+3. Seleccioná la base `centro_hogar` y andá a la pestaña **Importar**
+4. Importá `database.sql` (estructura)
+5. (Opcional) Importá `seed.sql` (datos de prueba)
 
 ### 3. Configurar el backend
 
@@ -72,9 +125,11 @@ Editá el `.env` con tus credenciales MySQL:
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
-DB_PASSWORD=           # tu contraseña de MySQL (vacío si usás XAMPP por defecto)
+DB_PASSWORD=                        # vacío si usás XAMPP por defecto
 DB_NAME=centro_hogar
-JWT_SECRET=un-secreto-largo-y-seguro-de-minimo-32-caracteres
+JWT_SECRET=un-secreto-largo-de-minimo-32-caracteres
+ADMIN_EMAIL=admin@centrohogar.com
+ADMIN_PASSWORD=cambia-esta-clave
 ```
 
 Instalá dependencias y levantá el servidor:
@@ -106,7 +161,20 @@ npm install
 npm run dev
 ```
 
-El frontend corre en `http://localhost:5173`.
+El frontend corre en `http://localhost:5173`. Entrá con el `ADMIN_EMAIL` / `ADMIN_PASSWORD` que pusiste en el `.env` del backend.
+
+---
+
+## Backups y mantenimiento
+
+Una vez instalado, hay dos mecanismos complementarios para hacer copias de seguridad:
+
+| Vía | Qué incluye | Cuándo usarla |
+|-----|-------------|---------------|
+| **Ajustes → Copia de seguridad** | Excel/CSV de todas las tablas, accesible desde la app | Para entregar al cliente o archivar mensualmente |
+| **`scripts/db-export.ps1`** | Dump SQL nativo (estructura + datos + triggers) | Para migrar a otra PC o restaurar después de un crash |
+
+También hay una sección de **Limpieza de ventas antiguas** dentro de Ajustes que permite borrar definitivamente ventas con más de N años (2/3/5/10) si la base crece demasiado.
 
 ---
 
@@ -137,6 +205,8 @@ El frontend corre en `http://localhost:5173`.
 
 ## Credenciales de prueba
 
+Estas funcionan solo si importaste `seed.sql`.
+
 | Email | Contraseña | Rol |
 |-------|------------|-----|
 | `admin@centrohogar.com` | `test123` | Administrador |
@@ -161,10 +231,10 @@ El frontend corre en `http://localhost:5173`.
 
 ## Funcionalidades
 
-- **Dashboard** — métricas del día, gráfico de ventas últimos 14 días, alertas de stock bajo, donut interactivo de productos por categoría (último mes) con panel lateral de detalle, top 5 vendedores del mes
-- **Clientes** — CRUD completo, historial de compras por cliente
-- **Productos** — CRUD con categorías, control de stock e imágenes
-- **Ventas** — wizard multi-paso (cliente → carrito → pago → confirmar), descarga de ticket PDF
-- **Reportes** — KPIs por período, desglose por método de pago, exportación a PDF y Excel
+- **Dashboard** — métricas del día, gráfico de ventas últimos 14 días, alertas de stock bajo, donut interactivo de productos por categoría con selector de período (7d / 30d / 90d / 1a) y panel lateral de detalle, top 5 vendedores
+- **Clientes** — CRUD completo, historial de compras paginado por cliente
+- **Productos** — CRUD con categorías, control de stock, top 5 más vendidos del último año por defecto
+- **Ventas** — wizard multi-paso (cliente → carrito → pago → confirmar), descarga de ticket PDF, validación de stock al confirmar
+- **Reportes** — KPIs por período, desglose por método de pago, exportación a PDF y Excel filtrados por rango de fechas
 - **Usuarios** — alta/edición con roles (admin / encargado_stock / vendedor)
-- **Ajustes** — gestión de categorías, backup completo en CSV y Excel
+- **Ajustes** — gestión de categorías, backup completo (CSV/Excel), limpieza de ventas antiguas
