@@ -21,11 +21,12 @@ export const clientesController = {
       sortRaw === 'recientes' ? 'recientes' : sortRaw === 'nombre' ? 'nombre' : undefined
 
     const result = await clientesService.list({
-      search:   req.query['search'] as string | undefined,
-      activo:   activoStr !== undefined ? activoStr !== 'false' : undefined,
+      search:    req.query['search'] as string | undefined,
+      activo:    activoStr !== undefined ? activoStr !== 'false' : undefined,
       sort,
-      page:     req.query['page']     ? parseInt(req.query['page'] as string, 10)     : 1,
-      pageSize: req.query['pageSize'] ? parseInt(req.query['pageSize'] as string, 10) : 20,
+      page:      req.query['page']     ? parseInt(req.query['page'] as string, 10)     : 1,
+      pageSize:  req.query['pageSize'] ? parseInt(req.query['pageSize'] as string, 10) : 20,
+      skipCount: req.query['skipCount'] === 'true',
     })
     r.ok(res, result)
   },

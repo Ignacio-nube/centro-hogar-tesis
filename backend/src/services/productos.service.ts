@@ -1,42 +1,54 @@
 import { pool } from '../config/database'
 import { buildPaginated, parsePagination } from '../utils/pagination'
+import { escapeLike } from '../utils/sql'
 import type { Producto, PaginatedResult } from '../models/types'
 
 export const productosService = {
 
   async list(params: {
-    search?:      string
-    categoriaId?: number
-    soloActivos?: boolean
-    bajoStock?:   boolean
-    conStock?:    boolean
-    sort?:        'top' | 'nombre'
-    page?:        number
-    pageSize?:    number
+    search?:        string
+    categoriaId?:   number
+    soloActivos?:   boolean
+    soloInactivos?: boolean
+    bajoStock?:     boolean
+    conStock?:      boolean
+    sort?:          'top' | 'nombre'
+    page?:          number
+    pageSize?:      number
+    skipCount?:     boolean
   }): Promise<PaginatedResult<Producto>> {
-    const { search, categoriaId, soloActivos = true, bajoStock, conStock, sort = 'nombre' } = params
+    const { search, categoriaId, soloActivos = true, soloInactivos, bajoStock, conStock, sort = 'nombre', skipCount } = params
     const { page, pageSize, offset } = parsePagination(params as Record<string, unknown>)
 
     const conditions: string[] = []
     const values: (string | number | boolean | null)[] = []
 
-    if (soloActivos)   { conditions.push('p.activo = 1') }
+    // soloInactivos tiene prioridad si viene activo: filtra exactamente activo=0.
+    if (soloInactivos)      { conditions.push('p.activo = 0') }
+    else if (soloActivos)   { conditions.push('p.activo = 1') }
     if (categoriaId)   { conditions.push('p.categoria_id = ?');     values.push(categoriaId) }
-    if (search)        { conditions.push('(p.nombre LIKE ? OR p.codigo LIKE ?)'); values.push(`%${search}%`, `%${search}%`) }
+    if (search) {
+      const safe = escapeLike(search)
+      conditions.push('(p.nombre LIKE ? OR p.codigo LIKE ?)')
+      values.push(`%${safe}%`, `%${safe}%`)
+    }
     if (conStock)      { conditions.push('p.stock_actual > 0') }
     if (bajoStock)     { conditions.push('p.stock_actual <= p.stock_minimo') }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
+    const countPromise = skipCount
+      ? Promise.resolve<[any[], any]>([[{ total: -1 }], null])
+      : pool.execute<any[]>(`SELECT COUNT(*) AS total FROM productos p ${where}`, values)
+
     if (sort === 'top') {
-      const [countRows] = await pool.execute<any[]>(
-        `SELECT COUNT(*) AS total FROM productos p ${where}`,
-        values
-      )
-      const total = (countRows[0] as { total: number }).total
+      // "Más vendidos en el último año" — acotar el subquery evita escanear venta_items completo.
+      const desde = new Date()
+      desde.setDate(desde.getDate() - 365)
+      const desdeStr = desde.toISOString().slice(0, 19).replace('T', ' ')
 
       // Subquery pre-agrupada: evita GROUP BY sobre toda la tabla en el outer query
-      const [rows] = await pool.execute<any[]>(
+      const rowsPromise = pool.execute<any[]>(
         `SELECT p.*, c.nombre AS categoria_nombre,
                 COALESCE(vi_agg.unidades_vendidas, 0) AS unidades_vendidas
          FROM productos p
@@ -44,24 +56,22 @@ export const productosService = {
          LEFT JOIN (
            SELECT vi.producto_id, SUM(vi.cantidad) AS unidades_vendidas
            FROM venta_items vi
-           INNER JOIN ventas v ON v.id = vi.venta_id AND v.estado_id = 1
+           INNER JOIN ventas v ON v.id = vi.venta_id
+                              AND v.estado_id = 1
+                              AND v.created_at >= ?
            GROUP BY vi.producto_id
          ) vi_agg ON vi_agg.producto_id = p.id
          ${where}
          ORDER BY vi_agg.unidades_vendidas DESC, p.nombre ASC
          LIMIT ? OFFSET ?`,
-        [...values, pageSize, offset]
+        [desdeStr, ...values, pageSize, offset]
       )
+      const [[countRows], [rows]] = await Promise.all([countPromise, rowsPromise])
+      const total = (countRows[0] as { total: number }).total
       return buildPaginated((rows as any[]).map(normalizeProducto), total, page, pageSize)
     }
 
-    const [countRows] = await pool.execute<any[]>(
-      `SELECT COUNT(*) AS total FROM productos p ${where}`,
-      values
-    )
-    const total = (countRows[0] as { total: number }).total
-
-    const [rows] = await pool.execute<any[]>(
+    const rowsPromise = pool.execute<any[]>(
       `SELECT p.*, c.nombre AS categoria_nombre
        FROM productos p
        LEFT JOIN categorias c ON c.id = p.categoria_id
@@ -70,6 +80,8 @@ export const productosService = {
        LIMIT ? OFFSET ?`,
       [...values, pageSize, offset]
     )
+    const [[countRows], [rows]] = await Promise.all([countPromise, rowsPromise])
+    const total = (countRows[0] as { total: number }).total
 
     const data = (rows as any[]).map(normalizeProducto)
     return buildPaginated(data, total, page, pageSize)

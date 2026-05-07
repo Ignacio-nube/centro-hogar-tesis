@@ -32,6 +32,7 @@ export const ventasController = {
       search:       req.query['search']       as string | undefined,
       page:         req.query['page']     ? parseInt(req.query['page'] as string, 10)     : 1,
       pageSize:     req.query['pageSize'] ? parseInt(req.query['pageSize'] as string, 10) : 20,
+      skipCount:    req.query['skipCount'] === 'true',
     })
     r.ok(res, result)
   },
@@ -59,7 +60,7 @@ export const ventasController = {
     const id = parseInt(req.params['id'] ?? '', 10)
     if (isNaN(id)) { r.badRequest(res, 'ID inválido'); return }
 
-    await ventasService.cancelar(id)
+    await ventasService.cancelar(id, req.user!.sub)
     r.ok(res, { message: 'Venta cancelada' })
   },
 

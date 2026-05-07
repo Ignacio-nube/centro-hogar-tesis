@@ -5,13 +5,17 @@ import type { ProductoFormValues } from '@/lib/validations/producto.schema'
 interface ProductoListParams {
   search?: string
   categoriaId?: string
+  /** true = solo activos, false = todos (activos+inactivos), undefined = solo activos por default. */
   soloActivos?: boolean
-  soloActivo?: boolean | null
+  /** Filtra exactamente activo=0. Tiene prioridad sobre soloActivos. */
+  soloInactivos?: boolean
   bajoStock?: boolean
   conStock?: boolean
   sort?: 'top' | 'nombre'
   page?: number
   pageSize?: number
+  /** Si true, omite el COUNT(*) en backend. */
+  skipCount?: boolean
 }
 
 function normalizeCategoria(c: any): Categoria {
@@ -52,17 +56,15 @@ function buildListQuery(params?: ProductoListParams): string {
   const categoriaId = params.categoriaId ? parseInt(params.categoriaId, 10) : NaN
   if (!Number.isNaN(categoriaId)) q.set('categoriaId', String(categoriaId))
 
-  if (params.soloActivo !== undefined && params.soloActivo !== null) {
-    q.set('soloActivos', String(params.soloActivo))
-  } else if (params.soloActivos !== undefined) {
-    q.set('soloActivos', String(params.soloActivos))
-  }
+  if (params.soloInactivos) q.set('soloInactivos', 'true')
+  if (params.soloActivos !== undefined) q.set('soloActivos', String(params.soloActivos))
 
   if (params.bajoStock) q.set('bajoStock', 'true')
   if (params.conStock) q.set('conStock', 'true')
   if (params.sort) q.set('sort', params.sort)
   if (params.page) q.set('page', String(params.page))
   if (params.pageSize) q.set('pageSize', String(params.pageSize))
+  if (params.skipCount) q.set('skipCount', 'true')
 
   const qs = q.toString()
   return qs ? `?${qs}` : ''

@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -21,14 +22,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { DataTable, type Column } from '@/components/common/DataTable'
+import { PaginationControls } from '@/components/common/PaginationControls'
 import { ClienteDialog } from '@/features/clientes/components/ClienteDialog'
 import { clientesService } from '@/features/clientes/services/clientesService'
 import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { useState } from 'react'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import type { Venta } from '@/types/app.types'
+
+const PAGE_SIZE = 10
 
 /* ─── Badge helpers ─────────────────────────────────────────────────────── */
 function EstadoBadge({ estado }: { estado: string }) {
@@ -161,6 +164,7 @@ export default function ClienteDetailPage() {
   const { can } = usePermissions()
   const canWrite = can('clientes.write')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [page, setPage] = useState(1)
 
   const { data: cliente, isLoading, isError, refetch } = useQuery({
     queryKey: ['cliente', id],
@@ -169,9 +173,10 @@ export default function ClienteDetailPage() {
   })
 
   const { data: historial, isLoading: loadingHistorial, isError: historialError, refetch: refetchHistorial } = useQuery({
-    queryKey: ['cliente-historial', id],
-    queryFn: () => clientesService.getHistorial(id!),
+    queryKey: ['cliente-historial', id, page],
+    queryFn: () => clientesService.getHistorial(id!, { page, pageSize: PAGE_SIZE }),
     enabled: !!id,
+    placeholderData: (prev) => prev,
   })
 
   const toggleActivoMutation = useMutation({
@@ -185,11 +190,14 @@ export default function ClienteDetailPage() {
     onError: () => toast.error('No se pudo actualizar el estado'),
   })
 
-  const ventasCompletadas = (historial ?? []).filter((v) => v.estado === 'completada')
-  const totalCompras = ventasCompletadas.reduce((acc, v) => acc + v.total_final, 0)
-  const ticketPromedio = ventasCompletadas.length > 0 ? totalCompras / ventasCompletadas.length : 0
+  // Stats agregadas vienen del backend (cubren todo el histórico, no la página actual).
+  const stats = historial?.stats
+  const comprasCompletadas = stats?.compras_completadas ?? 0
+  const totalCompras       = stats?.total_comprado ?? 0
+  const ticketPromedio     = stats?.ticket_promedio ?? 0
+  const totalHistorial     = historial?.count ?? 0
 
-  const columns: Column<Venta>[] = [
+  const columns: Column<Venta>[] = useMemo(() => [
     {
       key: 'numero_venta',
       header: '#',
@@ -243,7 +251,7 @@ export default function ClienteDetailPage() {
       header: 'Estado',
       cell: (v) => <EstadoBadge estado={v.estado} />,
     },
-  ]
+  ], [])
 
   /* Loading state */
   if (isLoading) {
@@ -343,7 +351,7 @@ export default function ClienteDetailPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           title="Compras realizadas"
-          value={String(ventasCompletadas.length)}
+          value={String(comprasCompletadas)}
           description="ventas completadas"
           icon={ShoppingBag}
         />
@@ -398,19 +406,36 @@ export default function ClienteDetailPage() {
       <Separator />
 
       {/* ── Purchase history ────────────────────────────────────────────── */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Historial de compras</h2>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold">Historial de compras</h2>
+          {totalHistorial > 0 && (
+            <span className="text-sm text-muted-foreground">
+              {totalHistorial} compras en total
+            </span>
+          )}
+        </div>
         {historialError ? (
           <QueryErrorState onRetry={() => refetchHistorial()} />
         ) : (
-        <DataTable
-          columns={columns}
-          data={historial ?? []}
-          isLoading={loadingHistorial}
-          rowKey={(v) => v.id}
-          emptyMessage="Este cliente no tiene compras registradas."
-          onRowClick={(v) => navigate(`/ventas/${v.id}`)}
-        />
+          <>
+            <DataTable
+              columns={columns}
+              data={historial?.data ?? []}
+              isLoading={loadingHistorial}
+              rowKey={(v) => v.id}
+              emptyMessage="Este cliente no tiene compras registradas."
+              onRowClick={(v) => navigate(`/ventas/${v.id}`)}
+            />
+            {totalHistorial > PAGE_SIZE && (
+              <PaginationControls
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={totalHistorial}
+                onPageChange={setPage}
+              />
+            )}
+          </>
         )}
       </div>
 

@@ -64,6 +64,7 @@ export const clientesService = {
     sort?: 'recientes' | 'nombre'
     page?: number
     pageSize?: number
+    skipCount?: boolean
   }): Promise<{ data: Cliente[]; count: number }> {
     const query = new URLSearchParams()
 
@@ -72,6 +73,7 @@ export const clientesService = {
     if (params?.sort) query.set('sort', params.sort)
     if (params?.page) query.set('page', String(params.page))
     if (params?.pageSize) query.set('pageSize', String(params.pageSize))
+    if (params?.skipCount) query.set('skipCount', 'true')
 
     const qs = query.toString()
     const result = await api.get<PaginatedResult<any>>(`/clientes${qs ? `?${qs}` : ''}`)
@@ -108,8 +110,22 @@ export const clientesService = {
     return result.map(normalizeCliente)
   },
 
-  async getHistorial(clienteId: string): Promise<Venta[]> {
-    const data = await api.get<HistorialResponse>(`/clientes/${clienteId}/historial?page=1&pageSize=100`)
-    return data.data.map(normalizeVenta)
+  async getHistorial(
+    clienteId: string,
+    params?: { page?: number; pageSize?: number },
+  ): Promise<{
+    data: Venta[]
+    count: number
+    stats: { compras_completadas: number; total_comprado: number; ticket_promedio: number }
+  }> {
+    const q = new URLSearchParams()
+    q.set('page',     String(params?.page     ?? 1))
+    q.set('pageSize', String(params?.pageSize ?? 10))
+    const result = await api.get<HistorialResponse>(`/clientes/${clienteId}/historial?${q.toString()}`)
+    return {
+      data:  result.data.map(normalizeVenta),
+      count: result.total,
+      stats: result.stats,
+    }
   },
 }

@@ -1,12 +1,27 @@
 import { api, tokenStorage } from '@/lib/api'
-import type { Profile, AuthLoginResult } from '@/types/app.types'
+import type { Profile, AuthLoginResult, Rol } from '@/types/app.types'
 
-function normalizeProfile(p: any): Profile {
+interface RawProfile {
+  id: number | string
+  nombre: string
+  apellido: string
+  email?: string
+  rol: Rol
+  activo: boolean | number
+  created_at?: string
+  updated_at?: string
+}
+
+function normalizeProfile(p: RawProfile): Profile {
   return {
-    ...p,
     id: String(p.id),
+    nombre: p.nombre,
+    apellido: p.apellido,
+    email: p.email,
     rol: p.rol,
     activo: Boolean(p.activo),
+    created_at: p.created_at ?? '',
+    updated_at: p.updated_at ?? '',
   }
 }
 
@@ -25,13 +40,13 @@ export const authService = {
     const token = tokenStorage.get()
     if (!token) return null
 
-    const me = normalizeProfile(await api.get<any>('/auth/me'))
+    const me = normalizeProfile(await api.get<RawProfile>('/auth/me'))
     return { id: me.id, email: me.email ?? '' }
   },
 
   async getProfile(_userId: string): Promise<Profile | null> {
     try {
-      const me = normalizeProfile(await api.get<any>('/auth/me'))
+      const me = normalizeProfile(await api.get<RawProfile>('/auth/me'))
       return me
     } catch {
       tokenStorage.remove()
@@ -44,7 +59,7 @@ export const authService = {
     password: string,
     profileData: { nombre: string; apellido: string; rol: Profile['rol'] }
   ): Promise<Profile> {
-    const created = await api.post<any>('/usuarios', {
+    const created = await api.post<RawProfile>('/usuarios', {
       nombre: profileData.nombre,
       apellido: profileData.apellido,
       email,
@@ -58,7 +73,7 @@ export const authService = {
     userId: string,
     updates: Partial<Pick<Profile, 'nombre' | 'apellido' | 'rol' | 'activo'>>
   ): Promise<Profile> {
-    const updated = await api.put<any>(`/usuarios/${userId}`, updates)
+    const updated = await api.put<RawProfile>(`/usuarios/${userId}`, updates)
     return normalizeProfile(updated)
   },
 
@@ -74,7 +89,7 @@ export const authService = {
     if (opts?.page)              params.set('page',     String(opts.page))
     if (opts?.pageSize)          params.set('pageSize', String(opts.pageSize))
     const qs = params.toString()
-    const result = await api.get<{ data: any[]; count: number }>(
+    const result = await api.get<{ data: RawProfile[]; count: number }>(
       `/usuarios${qs ? `?${qs}` : ''}`
     )
     return { data: result.data.map(normalizeProfile), count: result.count }

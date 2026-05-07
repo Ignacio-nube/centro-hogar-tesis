@@ -1,30 +1,96 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { formatDateTime, formatCurrency } from '@/lib/utils'
+import { LogoPDF } from './LogoPDF'
 import type { Venta, CartItem } from '@/types/app.types'
+
+const BRAND = '#E97118'
+const BRAND_DARK = '#B54612'
 
 const styles = StyleSheet.create({
   page: {
     fontFamily: 'Helvetica',
     fontSize: 9,
-    padding: 16,
-    width: 226, // ~80mm
+    padding: 18,
     backgroundColor: '#ffffff',
   },
-  center: { alignItems: 'center', textAlign: 'center' },
-  bold: { fontFamily: 'Helvetica-Bold' },
+  header: { alignItems: 'center', marginBottom: 6 },
+  title: {
+    fontSize: 13,
+    fontFamily: 'Helvetica-Bold',
+    marginTop: 4,
+    color: BRAND_DARK,
+    letterSpacing: 1,
+  },
+  subtitle: {
+    fontSize: 8,
+    color: '#6b7280',
+    marginTop: 1,
+  },
+  metaBox: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginTop: 6,
+    width: '100%',
+    alignItems: 'center',
+  },
+  metaText: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: BRAND_DARK,
+  },
+  metaSub: {
+    fontSize: 8,
+    color: '#6b7280',
+    marginTop: 1,
+  },
+  divider: { borderBottomWidth: 1, borderBottomColor: '#e5e7eb', marginVertical: 6 },
+  dividerStrong: { borderBottomWidth: 1.5, borderBottomColor: BRAND, marginVertical: 6 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
-  divider: { borderBottomWidth: 1, borderBottomColor: '#d1d5db', marginVertical: 6 },
-  header: { alignItems: 'center', marginBottom: 8 },
-  title: { fontSize: 14, fontFamily: 'Helvetica-Bold', marginTop: 4 },
-  subtitle: { fontSize: 9, color: '#6b7280', marginTop: 2 },
-  section: { marginBottom: 6 },
+  section: { marginBottom: 4 },
   label: { color: '#6b7280', fontSize: 8 },
   value: { fontFamily: 'Helvetica-Bold' },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
-  totalLabel: { fontSize: 11, fontFamily: 'Helvetica-Bold' },
-  totalValue: { fontSize: 11, fontFamily: 'Helvetica-Bold' },
-  footer: { marginTop: 12, alignItems: 'center' },
-  footerText: { fontSize: 8, color: '#9ca3af' },
+  bold: { fontFamily: 'Helvetica-Bold' },
+  itemTitle: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 9,
+    color: '#111827',
+  },
+  itemMeta: {
+    fontSize: 8,
+    color: '#6b7280',
+  },
+  totalBlock: {
+    marginTop: 6,
+    backgroundColor: '#fff7ed',
+    borderRadius: 4,
+    padding: 8,
+  },
+  totalLabel: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#374151' },
+  totalValue: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: BRAND_DARK },
+  cuotaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 3,
+    fontSize: 8,
+  },
+  pagoBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    marginTop: 6,
+  },
+  footer: { marginTop: 10, alignItems: 'center' },
+  footerThanks: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: BRAND_DARK,
+  },
+  footerText: { fontSize: 7, color: '#9ca3af', marginTop: 1 },
 })
 
 interface TicketPDFProps {
@@ -47,47 +113,66 @@ const TARJETA_LABEL: Record<string, string> = {
 
 export function TicketPDF({ venta, items }: TicketPDFProps) {
   const cuotaMonto = venta.cuotas > 1 ? venta.total_final / venta.cuotas : venta.total_final
+  const numeroFmt = `#${String(venta.numero_venta).padStart(4, '0')}`
 
   return (
     <Document>
+      {/* 80mm = 226pt de ancho; alto generoso (auto-ajusta el contenido) */}
       <Page size={[226, 600]} style={styles.page}>
-        {/* Header */}
+        {/* Header con logo */}
         <View style={styles.header}>
+          <LogoPDF size={48} />
           <Text style={styles.title}>CENTRO HOGAR</Text>
-          <Text style={styles.subtitle}>Comprobante de venta</Text>
-          <View style={styles.divider} />
-          <Text style={[styles.label, { marginTop: 2 }]}>
-            #{String(venta.numero_venta).padStart(4, '0')} · {formatDateTime(venta.created_at)}
-          </Text>
+          <Text style={styles.subtitle}>Tu mueblería de confianza</Text>
         </View>
 
-        {/* Cliente y vendedor */}
+        {/* Numero y fecha destacados */}
+        <View style={styles.metaBox}>
+          <Text style={styles.metaText}>Comprobante {numeroFmt}</Text>
+          <Text style={styles.metaSub}>{formatDateTime(venta.created_at)}</Text>
+        </View>
+
         {(venta.cliente || venta.vendedor) && (
-          <View style={[styles.section]}>
-            {venta.cliente && (
-              <View style={styles.row}>
-                <Text style={styles.label}>Cliente:</Text>
-                <Text style={styles.bold}>{venta.cliente.nombre} {venta.cliente.apellido}</Text>
-              </View>
-            )}
-            {venta.vendedor && (
-              <View style={styles.row}>
-                <Text style={styles.label}>Vendedor:</Text>
-                <Text>{venta.vendedor.nombre} {venta.vendedor.apellido}</Text>
-              </View>
-            )}
-          </View>
+          <>
+            <View style={styles.divider} />
+            <View style={styles.section}>
+              {venta.cliente && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>Cliente</Text>
+                  <Text style={styles.bold}>
+                    {venta.cliente.nombre} {venta.cliente.apellido}
+                  </Text>
+                </View>
+              )}
+              {venta.cliente?.dni && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>DNI</Text>
+                  <Text>{venta.cliente.dni}</Text>
+                </View>
+              )}
+              {venta.vendedor && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>Atendido por</Text>
+                  <Text>
+                    {venta.vendedor.nombre} {venta.vendedor.apellido}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </>
         )}
 
-        <View style={styles.divider} />
+        <View style={styles.dividerStrong} />
 
         {/* Items */}
         <View style={styles.section}>
           {items.map((item, idx) => (
             <View key={idx} style={{ marginBottom: 4 }}>
-              <Text style={styles.bold}>{item.producto.nombre}</Text>
+              <Text style={styles.itemTitle}>{item.producto.nombre}</Text>
               <View style={styles.row}>
-                <Text style={styles.label}>{item.cantidad} × {formatCurrency(item.precio_unitario)}</Text>
+                <Text style={styles.itemMeta}>
+                  {item.cantidad} × {formatCurrency(item.precio_unitario)}
+                </Text>
                 <Text style={styles.bold}>{formatCurrency(item.subtotal)}</Text>
               </View>
             </View>
@@ -105,34 +190,33 @@ export function TicketPDF({ venta, items }: TicketPDFProps) {
           {venta.descuento > 0 && (
             <View style={styles.row}>
               <Text style={styles.label}>Descuento</Text>
-              <Text>- {formatCurrency(venta.descuento)}</Text>
+              <Text style={{ color: '#15803d' }}>− {formatCurrency(venta.descuento)}</Text>
             </View>
           )}
           {venta.interes_porcentaje > 0 && (
             <View style={styles.row}>
               <Text style={styles.label}>Interés ({venta.interes_porcentaje}%)</Text>
-              <Text>+ {formatCurrency(venta.interes_monto)}</Text>
+              <Text style={{ color: '#b45309' }}>+ {formatCurrency(venta.interes_monto)}</Text>
             </View>
           )}
         </View>
 
-        <View style={styles.divider} />
-
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>TOTAL</Text>
-          <Text style={styles.totalValue}>{formatCurrency(venta.total_final)}</Text>
+        {/* Total destacado */}
+        <View style={styles.totalBlock}>
+          <View style={styles.row}>
+            <Text style={styles.totalLabel}>TOTAL</Text>
+            <Text style={styles.totalValue}>{formatCurrency(venta.total_final)}</Text>
+          </View>
+          {venta.cuotas > 1 && (
+            <View style={styles.cuotaRow}>
+              <Text style={styles.label}>{venta.cuotas} cuotas de</Text>
+              <Text style={styles.bold}>{formatCurrency(cuotaMonto)}</Text>
+            </View>
+          )}
         </View>
 
-        {venta.cuotas > 1 && (
-          <View style={[styles.row, { marginTop: 3 }]}>
-            <Text style={styles.label}>{venta.cuotas} cuotas de</Text>
-            <Text style={styles.bold}>{formatCurrency(cuotaMonto)}</Text>
-          </View>
-        )}
-
-        {/* Pago */}
-        <View style={[styles.divider, { marginTop: 6 }]} />
-        <View style={styles.row}>
+        {/* Método de pago */}
+        <View style={styles.pagoBox}>
           <Text style={styles.label}>Forma de pago</Text>
           <Text style={styles.bold}>
             {METODO_LABEL[venta.metodo_pago]}
@@ -143,8 +227,8 @@ export function TicketPDF({ venta, items }: TicketPDFProps) {
         {/* Footer */}
         <View style={styles.footer}>
           <View style={styles.divider} />
-          <Text style={styles.footerText}>¡Gracias por su compra!</Text>
-          <Text style={styles.footerText}>Centro Hogar — Tu mueblería de confianza</Text>
+          <Text style={styles.footerThanks}>¡Gracias por su compra!</Text>
+          <Text style={styles.footerText}>Conserve este comprobante por cualquier consulta.</Text>
         </View>
       </Page>
     </Document>

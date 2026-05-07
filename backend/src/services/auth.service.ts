@@ -81,5 +81,9 @@ export async function seedAdminIfNeeded(): Promise<void> {
     [nombre, apellido, email, passwordHash]
   )
 
-  console.log(`[seed] Admin inicial creado: ${email}`)
+  if (env.nodeEnv !== 'production') {
+    console.log(`[seed] Admin inicial creado: ${email}`)
+  } else {
+    console.log('[seed] Admin inicial creado')
+  }
 }

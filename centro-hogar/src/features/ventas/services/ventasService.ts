@@ -122,8 +122,10 @@ export const ventasService = {
     search?: string
     page?: number
     pageSize?: number
+    /** Si true, omite el COUNT(*) — útil cuando no se muestra paginación. */
+    skipCount?: boolean
   }): Promise<{ data: Venta[]; count: number }> {
-    const { vendedorId, estado, metodoPago, fechaDesde, fechaHasta, search, page = 1, pageSize = 20 } = params ?? {}
+    const { vendedorId, estado, metodoPago, fechaDesde, fechaHasta, search, page = 1, pageSize = 20, skipCount } = params ?? {}
     const q = new URLSearchParams()
 
     const vendedorIdNum = vendedorId ? parseInt(vendedorId, 10) : NaN
@@ -138,6 +140,7 @@ export const ventasService = {
     if (search)     q.set('search', search)
     q.set('page', String(page))
     q.set('pageSize', String(pageSize))
+    if (skipCount)  q.set('skipCount', 'true')
 
     const result = await api.get<PaginatedResult<any>>(`/ventas?${q.toString()}`)
     return { data: result.data.map(mapVenta), count: result.total }
@@ -158,8 +161,13 @@ export const ventasService = {
       formValues.interes_porcentaje ?? 0
     )
 
+    const clienteIdNum = formValues.cliente_id ? Number(formValues.cliente_id) : null
+    if (clienteIdNum !== null && !Number.isFinite(clienteIdNum)) {
+      throw new Error('cliente_id inválido')
+    }
+
     const payload = {
-      cliente_id: formValues.cliente_id ? parseInt(formValues.cliente_id, 10) : null,
+      cliente_id: clienteIdNum,
       metodo_pago_id: toMetodoPagoId(formValues.metodo_pago),
       tipo_tarjeta_id: toTipoTarjetaId(formValues.tarjeta_tipo),
       cuotas: formValues.cuotas ?? 1,
@@ -167,11 +175,17 @@ export const ventasService = {
       interes_porcentaje: formValues.interes_porcentaje ?? 0,
       interes_monto: interesMonto,
       notas: formValues.notas ?? null,
-      items: items.map((item) => ({
-        producto_id: parseInt(item.producto.id, 10),
-        cantidad: item.cantidad,
-        precio_unitario: item.precio_unitario,
-      })),
+      items: items.map((item) => {
+        const productoId = Number(item.producto.id)
+        if (!Number.isFinite(productoId)) {
+          throw new Error(`producto_id inválido: ${item.producto.id}`)
+        }
+        return {
+          producto_id: productoId,
+          cantidad: item.cantidad,
+          precio_unitario: item.precio_unitario,
+        }
+      }),
     }
 
     const venta = await api.post<any>('/ventas', payload)

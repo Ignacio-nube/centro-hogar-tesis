@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, Search, SlidersHorizontal, List, MoreHorizontal } from 'lucide-react'
@@ -65,6 +65,7 @@ export default function ClientesPage() {
         sort: modo === 'todos' ? 'nombre' : 'recientes',
         page,
         pageSize,
+        skipCount: modo === 'inicial',
       }),
     staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
   })
@@ -82,11 +83,31 @@ export default function ClientesPage() {
   const toggleActivoMutation = useMutation({
     mutationFn: ({ id, activo }: { id: string; activo: boolean }) =>
       clientesService.toggleActivo(id, activo),
+    onMutate: async ({ id, activo }) => {
+      await qc.cancelQueries({ queryKey: ['clientes'] })
+      const snapshots = qc.getQueriesData<{ data: Cliente[]; count: number }>({ queryKey: ['clientes'] })
+      for (const [key, value] of snapshots) {
+        if (!value) continue
+        qc.setQueryData(key, {
+          ...value,
+          data: value.data.map((c) => (c.id === id ? { ...c, activo } : c)),
+        })
+      }
+      return { snapshots }
+    },
+    onError: (_err, _vars, ctx) => {
+      // Revertir
+      if (ctx?.snapshots) {
+        for (const [key, value] of ctx.snapshots) qc.setQueryData(key, value)
+      }
+      toast.error('No se pudo actualizar el estado')
+    },
     onSuccess: (updated) => {
       toast.success(updated.activo ? 'Cliente activado' : 'Cliente desactivado')
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['clientes'] })
     },
-    onError: () => toast.error('No se pudo actualizar el estado'),
   })
 
   function handleSearchChange(value: string) {
@@ -114,7 +135,7 @@ export default function ClientesPage() {
   const totalCount = data?.count ?? 0
   const mostrarPaginacion = modo !== 'inicial'
 
-  const columns: Column<Cliente>[] = [
+  const columns: Column<Cliente>[] = useMemo(() => [
     {
       key: 'nombre',
       header: 'Nombre',
@@ -198,7 +219,7 @@ export default function ClientesPage() {
           },
         ]
       : []),
-  ]
+  ], [canWrite, toggleActivoMutation])
 
   return (
     <div className="flex flex-col gap-6">

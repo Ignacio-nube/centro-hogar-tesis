@@ -4,7 +4,7 @@ import {
   FileText, TrendingUp, ShoppingCart, CreditCard, Banknote, ArrowLeftRight, Download, Sheet,
   Calendar, CalendarDays, CalendarRange,
 } from 'lucide-react'
-import { PDFDownloadLink } from '@react-pdf/renderer'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,8 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { PageHeader } from '@/components/common/PageHeader'
-import { ReporteVentasPDF } from '@/features/reportes/pdf/ReporteVentasPDF'
-import { ReporteStockPDF } from '@/features/reportes/pdf/ReporteStockPDF'
+import { downloadReporteVentasPDF, downloadReporteStockPDF } from '@/features/reportes/pdf/lazyDownload'
 import { reportesService } from '@/features/reportes/services/reportesService'
 import { productosService } from '@/features/productos/services/productosService'
 import { downloadBackupExcel } from '@/features/backup/backupService'
@@ -133,6 +132,8 @@ export default function ReportesPage() {
   const [fechaDesde, setFechaDesde] = useState(fmt(startOfMonth(today)))
   const [fechaHasta, setFechaHasta] = useState(fmt(today))
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false)
+  const [isDownloadingVentasPDF, setIsDownloadingVentasPDF] = useState(false)
+  const [isDownloadingStockPDF, setIsDownloadingStockPDF] = useState(false)
 
   // Cuando se elige un perfil predefinido, actualizamos fechas automáticamente
   function seleccionarPerfil(perfil: Perfil) {
@@ -240,35 +241,40 @@ export default function ReportesPage() {
                 <Sheet className="size-4 mr-1.5" />
                 {isDownloadingExcel ? 'Generando...' : 'Exportar Excel'}
               </Button>
-              <PDFDownloadLink
-                document={
-                  <ReporteVentasPDF
-                    ventas={[]}
-                    fechaDesde={fechaDesde}
-                    fechaHasta={fechaHasta}
-                    stats={statsForPDF}
-                  />
-                }
-                fileName={`reporte-ventas-${fechaDesde}-${fechaHasta}.pdf`}
+              <Button
+                variant="outline"
+                disabled={isDownloadingVentasPDF || isLoading}
+                onClick={async () => {
+                  setIsDownloadingVentasPDF(true)
+                  try {
+                    await downloadReporteVentasPDF([], fechaDesde, fechaHasta, statsForPDF)
+                  } catch (err) {
+                    toast.error(`No se pudo generar el reporte: ${(err as Error).message}`)
+                  } finally {
+                    setIsDownloadingVentasPDF(false)
+                  }
+                }}
               >
-                {({ loading }) => (
-                  <Button variant="outline" disabled={loading || isLoading}>
-                    <FileText className="size-4 mr-1.5" />
-                    {loading ? 'Generando...' : 'Reporte Ventas PDF'}
-                  </Button>
-                )}
-              </PDFDownloadLink>
-              <PDFDownloadLink
-                document={<ReporteStockPDF productos={productos} />}
-                fileName={`reporte-stock-${fmt(today)}.pdf`}
+                <FileText className="size-4 mr-1.5" />
+                {isDownloadingVentasPDF ? 'Generando...' : 'Reporte Ventas PDF'}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={isDownloadingStockPDF || loadingProductos}
+                onClick={async () => {
+                  setIsDownloadingStockPDF(true)
+                  try {
+                    await downloadReporteStockPDF(productos)
+                  } catch (err) {
+                    toast.error(`No se pudo generar el reporte: ${(err as Error).message}`)
+                  } finally {
+                    setIsDownloadingStockPDF(false)
+                  }
+                }}
               >
-                {({ loading }) => (
-                  <Button variant="outline" disabled={loading || loadingProductos}>
-                    <Download className="size-4 mr-1.5" />
-                    {loading ? 'Generando...' : 'Reporte Stock PDF'}
-                  </Button>
-                )}
-              </PDFDownloadLink>
+                <Download className="size-4 mr-1.5" />
+                {isDownloadingStockPDF ? 'Generando...' : 'Reporte Stock PDF'}
+              </Button>
             </div>
           </div>
         </CardContent>

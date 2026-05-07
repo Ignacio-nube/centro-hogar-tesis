@@ -23,6 +23,14 @@ interface ApiResponse<T> {
   message?: string
 }
 
+function handleUnauthorized(): void {
+  // Token inválido o expirado: limpiar y forzar relogin.
+  tokenStorage.remove()
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    window.location.assign('/login')
+  }
+}
+
 async function request<T>(
   path:    string,
   options: RequestInit = {}
@@ -40,7 +48,20 @@ async function request<T>(
   // 204 No Content
   if (res.status === 204) return undefined as T
 
-  const body: ApiResponse<T> = await res.json()
+  // Login propio devuelve 401 con mensaje — no redirigir desde el endpoint de login.
+  const isLoginAttempt = path.endsWith('/auth/login')
+
+  let body: ApiResponse<T>
+  try {
+    body = await res.json()
+  } catch {
+    body = { success: res.ok }
+  }
+
+  if (res.status === 401 && !isLoginAttempt) {
+    handleUnauthorized()
+    throw new Error(body.message ?? 'Sesión expirada')
+  }
 
   if (!res.ok) {
     throw new Error(body.message ?? `HTTP ${res.status}`)
@@ -95,6 +116,11 @@ export const api = {
     if (token) headers['Authorization'] = `Bearer ${token}`
 
     const res = await fetch(`${BASE_URL}${path}`, { method: 'GET', headers })
+
+    if (res.status === 401) {
+      handleUnauthorized()
+      throw new Error('Sesión expirada')
+    }
 
     if (!res.ok) {
       let message = `HTTP ${res.status}`

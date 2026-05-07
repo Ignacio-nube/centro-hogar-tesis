@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, Search, SlidersHorizontal, List } from 'lucide-react'
@@ -53,21 +53,19 @@ export default function ProductosPage() {
 
   const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
 
-  const soloActivoParam =
-    activoFilter === 'activo' ? true : activoFilter === 'inactivo' ? false : null
-
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['productos', debouncedSearch, categoriaId, activoFilter, stockFilter, page, modo],
     queryFn: () =>
       productosService.list({
         search: debouncedSearch || undefined,
         categoriaId: categoriaId || undefined,
-        soloActivos: false,
-        soloActivo: soloActivoParam,
+        soloActivos:   activoFilter === 'activo',
+        soloInactivos: activoFilter === 'inactivo',
         bajoStock: stockFilter === 'bajo',
         sort: modo === 'inicial' ? 'top' : 'nombre',
         page,
         pageSize,
+        skipCount: modo === 'inicial',
       }),
     staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
   })
@@ -129,7 +127,7 @@ export default function ProductosPage() {
   const totalCount = data?.count ?? 0
   const mostrarPaginacion = modo !== 'inicial'
 
-  const columns: Column<Producto>[] = [
+  const columns: Column<Producto>[] = useMemo(() => [
     {
       key: 'codigo',
       header: 'Código',
@@ -233,7 +231,7 @@ export default function ProductosPage() {
           ),
         }]
       : []),
-  ]
+  ], [canWrite, toggleActivoMutation])
 
   return (
     <div className="flex flex-col gap-6">
@@ -241,7 +239,7 @@ export default function ProductosPage() {
         title="Productos"
         description={
           modo === 'inicial'
-            ? 'Top 5 más vendidos'
+            ? 'Top 5 más vendidos en el último año'
             : `${totalCount} productos encontrados`
         }
         action={

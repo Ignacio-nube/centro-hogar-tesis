@@ -65,27 +65,35 @@ export function Step3PaymentForm({ state, computed, onSetPayment, onBack, onNext
   const cuotaMonto = cuotas > 1 ? totalFinal / cuotas : totalFinal
 
   function handleDiscountAmountChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const val = parseFloat(e.target.value) || 0
+    const raw = parseFloat(e.target.value) || 0
+    const val = Math.min(Math.max(raw, 0), computed.subtotal)
     form.setValue('descuento', val)
+    form.clearErrors('descuento')
     if (computed.subtotal > 0) {
       setDiscountPct(val > 0 ? ((val / computed.subtotal) * 100).toFixed(1) : '')
     }
   }
 
   function handleDiscountPctChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const pct = parseFloat(e.target.value) || 0
+    const pct = Math.min(Math.max(parseFloat(e.target.value) || 0, 0), 100)
     setDiscountPct(e.target.value)
     const amount = parseFloat(((pct / 100) * computed.subtotal).toFixed(2))
     form.setValue('descuento', amount)
+    form.clearErrors('descuento')
   }
 
   function handleSubmit(values: VentaFormValues) {
+    const desc = values.descuento ?? 0
+    if (desc > computed.subtotal + 0.01) {
+      form.setError('descuento', { message: 'El descuento no puede superar el subtotal' })
+      return
+    }
     onSetPayment({
       metodo_pago: values.metodo_pago,
       tarjeta_tipo: values.tarjeta_tipo ?? null,
       cuotas: values.cuotas ?? 1,
       interes_porcentaje: values.interes_porcentaje ?? 0,
-      descuento: values.descuento ?? 0,
+      descuento: desc,
       notas: values.notas ?? '',
     })
     onNext()
@@ -248,6 +256,9 @@ export function Step3PaymentForm({ state, computed, onSetPayment, onBack, onNext
               </span>
             </div>
           </div>
+          {form.formState.errors.descuento && (
+            <p className="text-xs text-destructive">{form.formState.errors.descuento.message}</p>
+          )}
         </div>
 
         {/* Notas */}

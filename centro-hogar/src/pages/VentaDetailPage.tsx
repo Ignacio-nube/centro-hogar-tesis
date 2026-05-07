@@ -1,14 +1,14 @@
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Download, User, CreditCard, Banknote, ArrowLeftRight, Receipt } from 'lucide-react'
 import { toast } from 'sonner'
-import { PDFDownloadLink } from '@react-pdf/renderer'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
-import { TicketPDF } from '@/features/reportes/pdf/TicketPDF'
+import { downloadTicketPDF } from '@/features/reportes/pdf/lazyDownload'
 import { ventasService } from '@/features/ventas/services/ventasService'
 import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
@@ -70,6 +70,7 @@ export default function VentaDetailPage() {
   const qc = useQueryClient()
   const { can } = usePermissions()
   const canWrite = can('ventas.write')
+  const [downloadingPDF, setDownloadingPDF] = useState(false)
 
   const { data: venta, isLoading, isError, refetch } = useQuery({
     queryKey: ['venta', id],
@@ -157,17 +158,24 @@ export default function VentaDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <PDFDownloadLink
-            document={<TicketPDF venta={venta} items={items} />}
-            fileName={`ticket-${venta.numero_venta}.pdf`}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={downloadingPDF}
+            onClick={async () => {
+              setDownloadingPDF(true)
+              try {
+                await downloadTicketPDF(venta, items)
+              } catch (err) {
+                toast.error(`No se pudo generar el ticket: ${(err as Error).message}`)
+              } finally {
+                setDownloadingPDF(false)
+              }
+            }}
           >
-            {({ loading }) => (
-              <Button variant="outline" size="sm" disabled={loading}>
-                <Download data-icon="inline-start" className="size-3.5" />
-                {loading ? 'Generando...' : 'Descargar ticket'}
-              </Button>
-            )}
-          </PDFDownloadLink>
+            <Download data-icon="inline-start" className="size-3.5" />
+            {downloadingPDF ? 'Generando...' : 'Descargar ticket'}
+          </Button>
           {canWrite && venta.estado !== 'cancelada' && (
             <Button
               variant="outline"
@@ -298,14 +306,14 @@ export default function VentaDetailPage() {
                   >
                     {venta.cliente.nombre} {venta.cliente.apellido}
                   </Button>
-                  {(venta.cliente as { dni?: string }).dni && (
+                  {venta.cliente.dni && (
                     <p className="text-xs text-muted-foreground">
-                      DNI: {(venta.cliente as { dni?: string }).dni}
+                      DNI: {venta.cliente.dni}
                     </p>
                   )}
-                  {(venta.cliente as { telefono?: string }).telefono && (
+                  {venta.cliente.telefono && (
                     <p className="text-xs text-muted-foreground">
-                      Tel: {(venta.cliente as { telefono?: string }).telefono}
+                      Tel: {venta.cliente.telefono}
                     </p>
                   )}
                 </div>

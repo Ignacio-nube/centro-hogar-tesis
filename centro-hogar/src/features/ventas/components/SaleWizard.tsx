@@ -6,6 +6,7 @@ import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSaleWizard } from '../hooks/useSaleWizard'
 import { ventasService } from '../services/ventasService'
+import { productosService } from '@/features/productos/services/productosService'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { Step1ClienteSelect } from './steps/Step1ClienteSelect'
 import { Step2CartBuilder } from './steps/Step2CartBuilder'
@@ -49,6 +50,36 @@ export function SaleWizard() {
     },
     onError: (err: Error) => toast.error(err.message || 'Error al registrar la venta'),
   })
+
+  // Refetch stock antes de confirmar para evitar fallar con mensaje crudo
+  // si el stock cambió desde que se armó el carrito.
+  const handleConfirm = async (): Promise<void> => {
+    try {
+      const fresh = await Promise.all(
+        wizard.state.items.map((it) => productosService.getById(it.producto.id))
+      )
+      const problemas: string[] = []
+      for (let i = 0; i < wizard.state.items.length; i++) {
+        const item = wizard.state.items[i]
+        const prod = fresh[i]
+        if (!item || !prod) continue
+        if (!prod.activo) {
+          problemas.push(`"${prod.nombre}" ya no está activo`)
+        } else if (prod.stock_actual < item.cantidad) {
+          problemas.push(`"${prod.nombre}": stock disponible ${prod.stock_actual}, solicitado ${item.cantidad}`)
+        }
+      }
+      if (problemas.length > 0) {
+        toast.error(`No se puede completar la venta: ${problemas.join('; ')}`)
+        qc.invalidateQueries({ queryKey: ['productos'] })
+        return
+      }
+    } catch (err) {
+      toast.error(`No se pudo revalidar el stock: ${(err as Error).message}`)
+      return
+    }
+    mutation.mutate()
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -128,7 +159,7 @@ export function SaleWizard() {
           computed={wizard.computed}
           completedVenta={completedVenta}
           isLoading={mutation.isPending}
-          onConfirm={() => mutation.mutate()}
+          onConfirm={handleConfirm}
           onBack={() => wizard.setStep(3)}
           onNewSale={() => { wizard.reset(); setCompletedVenta(null) }}
           onGoToVentas={() => navigate('/ventas')}

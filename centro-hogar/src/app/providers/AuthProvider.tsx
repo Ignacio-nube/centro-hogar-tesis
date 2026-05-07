@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import { authService } from '@/features/auth/services/authService'
+import { tokenStorage } from '@/lib/api'
 import type { Profile } from '@/types/app.types'
 
 interface AuthUser {
@@ -24,12 +26,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  const loadProfile = useCallback(async (userId: string) => {
+  const loadProfile = useCallback(async (userId: string): Promise<boolean> => {
     try {
       const p = await authService.getProfile(userId)
       setProfile(p)
+      return p !== null
     } catch {
       setProfile(null)
+      return false
     }
   }, [])
 
@@ -41,10 +45,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false
     authService.getCurrentUser()
       .then(async (u) => {
-        if (cancelled) return
-        if (u) {
-          setUser({ id: u.id, email: u.email })
-          await loadProfile(u.id)
+        if (cancelled || !u) return
+        setUser({ id: u.id, email: u.email })
+        const ok = await loadProfile(u.id)
+        if (!ok && !cancelled) {
+          // Token válido pero no podemos cargar el perfil → cerrar sesión limpio.
+          tokenStorage.remove()
+          setUser(null)
         }
       })
       .catch(() => {})
@@ -58,7 +65,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data?.usuario) {
       const userId = String(data.usuario.id)
       setUser({ id: userId, email: data.usuario.email })
-      await loadProfile(userId)
+      const ok = await loadProfile(userId)
+      if (!ok) {
+        tokenStorage.remove()
+        setUser(null)
+        toast.error('No se pudo cargar tu perfil. Volvé a intentarlo.')
+        throw new Error('No se pudo cargar el perfil')
+      }
     }
   }, [loadProfile])
 

@@ -11,10 +11,16 @@ export function errorHandler(
   const isDev = env.nodeEnv === 'development'
 
   // Errores de MySQL (mysql2 usa .code en lugar de .name)
-  const mysqlErr = err as Error & { code?: string; errno?: number }
+  const mysqlErr = err as Error & { code?: string; errno?: number; sqlMessage?: string }
 
   if (mysqlErr.code === 'ER_DUP_ENTRY') {
-    res.status(409).json({ success: false, message: 'Ya existe un registro con esos datos' })
+    const sqlMessage = mysqlErr.sqlMessage ?? ''
+    let message = 'Ya existe un registro con esos datos'
+    if (/uq_productos_codigo/i.test(sqlMessage))   message = 'Ya existe un producto con ese código'
+    else if (/uq_clientes_dni/i.test(sqlMessage))  message = 'Ya existe un cliente con ese DNI'
+    else if (/uq_ventas_numero/i.test(sqlMessage)) message = 'Conflicto generando número de venta. Intente nuevamente.'
+    else if (/uq_usuarios_email/i.test(sqlMessage) || /email/i.test(sqlMessage)) message = 'Ya existe un usuario con ese email'
+    res.status(409).json({ success: false, message })
     return
   }
 

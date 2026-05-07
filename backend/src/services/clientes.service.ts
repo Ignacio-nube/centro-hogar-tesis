@@ -1,5 +1,6 @@
 import { pool } from '../config/database'
 import { buildPaginated, parsePagination } from '../utils/pagination'
+import { escapeLike } from '../utils/sql'
 import type { Cliente, Venta, PaginatedResult } from '../models/types'
 
 export const clientesService = {
@@ -10,8 +11,9 @@ export const clientesService = {
     sort?:    'recientes' | 'nombre'
     page?:    number
     pageSize?: number
+    skipCount?: boolean
   }): Promise<PaginatedResult<Cliente>> {
-    const { search, activo, sort = 'nombre' } = params
+    const { search, activo, sort = 'nombre', skipCount } = params
     const { page, pageSize, offset } = parsePagination(params as Record<string, unknown>)
 
     const conditions: string[] = []
@@ -19,8 +21,9 @@ export const clientesService = {
 
     if (activo !== undefined) { conditions.push('activo = ?'); values.push(activo ? 1 : 0) }
     if (search) {
+      const safe = escapeLike(search)
       conditions.push('(nombre LIKE ? OR apellido LIKE ? OR dni LIKE ?)')
-      values.push(`%${search}%`, `%${search}%`, `%${search}%`)
+      values.push(`%${safe}%`, `%${safe}%`, `%${safe}%`)
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -28,16 +31,16 @@ export const clientesService = {
       ? 'ORDER BY created_at DESC, id DESC'
       : 'ORDER BY apellido ASC, nombre ASC'
 
-    const [countRows] = await pool.execute<any[]>(
-      `SELECT COUNT(*) AS total FROM clientes ${where}`,
-      values
-    )
-    const total = (countRows[0] as { total: number }).total
-
-    const [rows] = await pool.execute<any[]>(
+    const countPromise = skipCount
+      ? Promise.resolve<[any[], any]>([[{ total: -1 }], null])
+      : pool.execute<any[]>(`SELECT COUNT(*) AS total FROM clientes ${where}`, values)
+    const rowsPromise = pool.execute<any[]>(
       `SELECT * FROM clientes ${where} ${orderBy} LIMIT ? OFFSET ?`,
       [...values, pageSize, offset]
     )
+
+    const [[countRows], [rows]] = await Promise.all([countPromise, rowsPromise])
+    const total = (countRows[0] as { total: number }).total
 
     return buildPaginated(rows.map(normalizeCliente) as Cliente[], total, page, pageSize)
   },
@@ -108,11 +111,12 @@ export const clientesService = {
   },
 
   async search(query: string): Promise<Cliente[]> {
+    const safe = escapeLike(query)
     const [rows] = await pool.execute<any[]>(
       `SELECT * FROM clientes
        WHERE activo = 1 AND (nombre LIKE ? OR apellido LIKE ? OR dni LIKE ?)
        ORDER BY apellido ASC LIMIT 10`,
-      [`%${query}%`, `%${query}%`, `%${query}%`]
+      [`%${safe}%`, `%${safe}%`, `%${safe}%`]
     )
     return rows.map(normalizeCliente) as Cliente[]
   },

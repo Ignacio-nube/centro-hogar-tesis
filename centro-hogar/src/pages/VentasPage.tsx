@@ -1,21 +1,21 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, SlidersHorizontal, List, Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { PDFDownloadLink } from '@react-pdf/renderer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/common/PageHeader'
 import { DataTable, type Column } from '@/components/common/DataTable'
 import { PaginationControls } from '@/components/common/PaginationControls'
-import { TicketPDF } from '@/features/reportes/pdf/TicketPDF'
+import { downloadTicketPDF } from '@/features/reportes/pdf/lazyDownload'
 import { ventasService } from '@/features/ventas/services/ventasService'
 import { formatCurrency, formatDateTime, cn } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useDebounce } from '@/hooks/useDebounce'
-import type { Venta, CartItem } from '@/types/app.types'
+import { toast } from 'sonner'
+import type { Venta } from '@/types/app.types'
 
 type Modo = 'inicial' | 'buscando' | 'todos'
 
@@ -38,30 +38,6 @@ const METODO_ICON: Record<string, React.ElementType> = {
   efectivo:      Banknote,
   tarjeta:       CreditCard,
   transferencia: ArrowLeftRight,
-}
-
-function ventaItemsToCartItems(venta: Venta): CartItem[] {
-  return (venta.items ?? []).map((item) => ({
-    producto: item.producto ?? {
-      id: item.producto_id,
-      codigo: '',
-      nombre: 'Producto',
-      precio_venta: item.precio_unitario,
-      descripcion: null,
-      categoria_id: null,
-      categoria: undefined,
-      precio_costo: 0,
-      stock_actual: 0,
-      stock_minimo: 0,
-      imagen_url: null,
-      activo: true,
-      created_at: '',
-      updated_at: '',
-    },
-    cantidad: item.cantidad,
-    precio_unitario: item.precio_unitario,
-    subtotal: item.subtotal,
-  }))
 }
 
 export default function VentasPage() {
@@ -97,6 +73,8 @@ export default function VentasPage() {
         estado:     estado     || undefined,
         metodoPago: metodoPago || undefined,
         vendedorId: vendedorId || undefined,
+        // Modo "inicial" no muestra paginación: ahorrar el COUNT(*) sobre 60k+ filas.
+        skipCount:  modo === 'inicial',
       }),
     staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
   })
@@ -138,7 +116,7 @@ export default function VentasPage() {
   const totalCount = data?.count ?? 0
   const mostrarPaginacion = modo !== 'inicial'
 
-  const columns: Column<Venta>[] = [
+  const columns: Column<Venta>[] = useMemo(() => [
     {
       key: 'numero',
       header: '#',
@@ -209,7 +187,7 @@ export default function VentasPage() {
       className: 'w-12',
       cell: (v) => <TicketDownloadButton venta={v} />,
     },
-  ]
+  ], [])
 
   return (
     <div className="flex flex-col gap-6">
@@ -341,40 +319,44 @@ export default function VentasPage() {
   )
 }
 
-// ─── Lazy ticket download button ──────────────────────────────────────────────
+// ─── Botón de descarga de ticket (lazy) ───────────────────────────────────────
+// Carga @react-pdf/renderer (~1.5MB) sólo al hacer clic, no al renderizar la lista.
 function TicketDownloadButton({ venta }: { venta: Venta }) {
-  const [ready, setReady]         = useState(false)
-  const [ventaFull, setVentaFull] = useState<Venta | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  async function loadAndDownload(e: React.MouseEvent) {
+  async function handleClick(e: React.MouseEvent) {
     e.stopPropagation()
-    if (ventaFull) return
-    const full = await ventasService.getById(venta.id)
-    setVentaFull(full)
-    setReady(true)
-  }
-
-  if (ready && ventaFull) {
-    const items = ventaItemsToCartItems(ventaFull)
-    return (
-      <PDFDownloadLink
-        document={<TicketPDF venta={ventaFull} items={items} />}
-        fileName={`ticket-${ventaFull.numero_venta}.pdf`}
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-      >
-        {({ loading }) => (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 opacity-0 group-hover/row:opacity-100 transition-opacity"
-            title="Descargar ticket"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Download className={`size-3.5 ${loading ? 'opacity-50' : ''}`} />
-          </Button>
-        )}
-      </PDFDownloadLink>
-    )
+    if (loading) return
+    setLoading(true)
+    try {
+      const full = await ventasService.getById(venta.id)
+      const items = (full.items ?? []).map((item) => ({
+        producto: item.producto ?? {
+          id: item.producto_id,
+          codigo: '',
+          nombre: 'Producto',
+          precio_venta: item.precio_unitario,
+          descripcion: null,
+          categoria_id: null,
+          categoria: undefined,
+          precio_costo: 0,
+          stock_actual: 0,
+          stock_minimo: 0,
+          imagen_url: null,
+          activo: true,
+          created_at: '',
+          updated_at: '',
+        },
+        cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario,
+        subtotal: item.subtotal,
+      }))
+      await downloadTicketPDF(full, items)
+    } catch (err) {
+      toast.error(`No se pudo generar el ticket: ${(err as Error).message}`)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -383,9 +365,10 @@ function TicketDownloadButton({ venta }: { venta: Venta }) {
       size="icon"
       className="size-8 opacity-0 group-hover/row:opacity-100 transition-opacity"
       title="Descargar ticket"
-      onClick={loadAndDownload}
+      onClick={handleClick}
+      disabled={loading}
     >
-      <Download className="size-3.5" />
+      <Download className={`size-3.5 ${loading ? 'opacity-50 animate-pulse' : ''}`} />
     </Button>
   )
 }

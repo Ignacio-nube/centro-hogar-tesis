@@ -20,8 +20,9 @@ export default function LoginPage() {
     try {
       await signIn(email, password)
     } catch (err) {
-      toast.error('Credenciales incorrectas', {
-        description: 'Verificá tu email y contraseña.',
+      const message = err instanceof Error ? err.message : 'Error desconocido'
+      toast.error('No se pudo iniciar sesión', {
+        description: message,
       })
     } finally {
       setIsLoading(false)
@@ -56,6 +57,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus
+                  autoComplete="email"
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -66,6 +68,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  autoComplete="current-password"
                 />
               </div>
               <Button type="submit" className="w-full mt-2" disabled={isLoading}>

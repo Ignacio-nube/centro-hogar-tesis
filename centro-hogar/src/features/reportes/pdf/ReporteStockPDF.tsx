@@ -1,24 +1,36 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
+import { LogoPDF } from './LogoPDF'
 import type { Producto } from '@/types/app.types'
+
+const BRAND = '#E97118'
+const BRAND_DARK = '#B54612'
 
 const styles = StyleSheet.create({
   page: {
     fontFamily: 'Helvetica',
     fontSize: 10,
-    padding: 36,
+    paddingTop: 36,
+    paddingBottom: 50,
+    paddingHorizontal: 36,
     backgroundColor: '#ffffff',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 24,
+    marginBottom: 18,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   brand: {
     fontSize: 18,
     fontFamily: 'Helvetica-Bold',
-    color: '#111827',
+    color: BRAND_DARK,
+    letterSpacing: 0.5,
   },
   brandSub: {
     fontSize: 9,
@@ -38,8 +50,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   divider: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomWidth: 1.5,
+    borderBottomColor: BRAND,
     marginBottom: 16,
   },
   statsRow: {
@@ -147,10 +159,13 @@ export function ReporteStockPDF({ productos }: ReporteStockPDFProps) {
     <Document>
       <Page size="A4" style={styles.page}>
         {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.brand}>CENTRO HOGAR</Text>
-            <Text style={styles.brandSub}>Tu mueblería de confianza</Text>
+        <View style={styles.header} fixed>
+          <View style={styles.brandRow}>
+            <LogoPDF size={42} />
+            <View>
+              <Text style={styles.brand}>CENTRO HOGAR</Text>
+              <Text style={styles.brandSub}>Tu mueblería de confianza</Text>
+            </View>
           </View>
           <View>
             <Text style={styles.reportTitle}>Reporte de Stock</Text>

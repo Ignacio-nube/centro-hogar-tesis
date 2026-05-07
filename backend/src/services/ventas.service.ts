@@ -1,5 +1,6 @@
 import { pool } from '../config/database'
 import { buildPaginated, parsePagination } from '../utils/pagination'
+import { escapeLike } from '../utils/sql'
 import type { Venta, VentaItem, CreateVentaPayload, PaginatedResult } from '../models/types'
 
 // IDs lookup estáticos (evitan joins innecesarios)
@@ -18,8 +19,9 @@ export const ventasService = {
     search?:       string
     page?:         number
     pageSize?:     number
+    skipCount?:    boolean
   }): Promise<PaginatedResult<Venta>> {
-    const { vendedorId, estadoId, metodoPagoId, fechaDesde, fechaHasta, search } = params
+    const { vendedorId, estadoId, metodoPagoId, fechaDesde, fechaHasta, search, skipCount } = params
     const { page, pageSize, offset } = parsePagination(params as Record<string, unknown>)
 
     const conditions: string[] = []
@@ -39,8 +41,9 @@ export const ventasService = {
         values.push(Number(trimmed))
       } else {
         // Búsqueda por nombre/apellido de cliente
+        const safe = escapeLike(trimmed)
         conditions.push('(c.nombre LIKE ? OR c.apellido LIKE ?)')
-        values.push(`%${trimmed}%`, `%${trimmed}%`)
+        values.push(`%${safe}%`, `%${safe}%`)
         needsClientJoin = true
       }
     }
@@ -48,13 +51,16 @@ export const ventasService = {
     const where          = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const clientCountJoin = needsClientJoin ? 'LEFT JOIN clientes c ON c.id = v.cliente_id' : ''
 
-    const [countRows] = await pool.execute<any[]>(
-      `SELECT COUNT(*) AS total FROM ventas v ${clientCountJoin} ${where}`,
-      values
-    )
-    const total = (countRows[0] as { total: number }).total
+    // Las dos queries en paralelo (count + page) bajan latencia ~2x cuando hay COUNT.
+    // Si skipCount, evitamos el COUNT(*) — útil para vistas de "home" sin paginación.
+    const countPromise = skipCount
+      ? Promise.resolve<[any[], any]>([[{ total: -1 }], null])
+      : pool.execute<any[]>(
+          `SELECT COUNT(*) AS total FROM ventas v ${clientCountJoin} ${where}`,
+          values
+        )
 
-    const [rows] = await pool.execute<any[]>(
+    const rowsPromise = pool.execute<any[]>(
       `SELECT v.*, ev.nombre AS estado, mp.nombre AS metodo_pago,
               tt.nombre AS tipo_tarjeta,
               c.nombre AS cliente_nombre, c.apellido AS cliente_apellido,
@@ -70,6 +76,9 @@ export const ventasService = {
        LIMIT ? OFFSET ?`,
       [...values, pageSize, offset]
     )
+
+    const [[countRows], [rows]] = await Promise.all([countPromise, rowsPromise])
+    const total = (countRows[0] as { total: number }).total
 
     return buildPaginated(rows.map(normalizeVenta) as Venta[], total, page, pageSize)
   },
@@ -121,104 +130,134 @@ export const ventasService = {
   },
 
   async create(vendedorId: number, payload: CreateVentaPayload): Promise<Venta> {
-    const conn = await pool.getConnection()
-    try {
-      await conn.beginTransaction()
-
-      const subtotal   = payload.items.reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0)
-      const descuento  = payload.descuento ?? 0
-      const interesPct = payload.interes_porcentaje ?? 0
-      const interesAmt = payload.interes_monto ?? Math.round((subtotal * interesPct / 100) * 100) / 100
-
-      // Insertar venta (numero_venta lo maneja el trigger de la DB)
-      const [ventaResult] = await conn.execute<any>(
-        `INSERT INTO ventas
-           (numero_venta, cliente_id, vendedor_id, metodo_pago_id, tipo_tarjeta_id,
-            cuotas, subtotal, descuento, interes_porcentaje, interes_monto, estado_id, notas)
-         VALUES (0, ?,?,?,?,?,?,?,?,?,?,?)`,
-        [
-          payload.cliente_id ?? null,
-          vendedorId,
-          payload.metodo_pago_id,
-          payload.tipo_tarjeta_id ?? null,
-          payload.cuotas ?? 1,
-          subtotal,
-          descuento,
-          interesPct,
-          interesAmt,
-          ESTADO_ID.completada,
-          payload.notas ?? null,
-        ]
-      )
-      const ventaId = (ventaResult as { insertId: number }).insertId
-
-      // ── Paso 1: bloquear todos los productos de una vez ──────────────────
-      const productIds = payload.items.map(i => i.producto_id)
-      const inPh = productIds.map(() => '?').join(',')
-      const [stockRows] = await conn.execute<any[]>(
-        `SELECT id, stock_actual FROM productos WHERE id IN (${inPh}) FOR UPDATE`,
-        productIds
-      )
-
-      // ── Paso 2: verificar stock (acumular si hay duplicados de producto) ─
-      const stockMap  = new Map<number, number>()
-      const neededMap = new Map<number, number>()
-      for (const row of stockRows) stockMap.set(Number(row.id), Number(row.stock_actual))
-      for (const item of payload.items) {
-        neededMap.set(item.producto_id, (neededMap.get(item.producto_id) ?? 0) + item.cantidad)
-      }
-      for (const [pid, needed] of neededMap) {
-        const available = stockMap.get(pid) ?? 0
-        if (available < needed) {
-          throw new Error(
-            `Stock insuficiente para producto #${pid} (disponible: ${available}, requerido: ${needed})`
-          )
-        }
-      }
-
-      // ── Paso 3: bulk INSERT venta_items ──────────────────────────────────
-      const itemVals = payload.items.flatMap(i => [ventaId, i.producto_id, i.cantidad, i.precio_unitario])
-      const itemPh   = payload.items.map(() => '(?,?,?,?)').join(',')
-      await conn.execute(
-        `INSERT INTO venta_items (venta_id, producto_id, cantidad, precio_unitario) VALUES ${itemPh}`,
-        itemVals
-      )
-
-      // ── Paso 4: bulk UPDATE stock con CASE WHEN (1 query) ────────────────
-      const caseParts: string[] = []
-      const caseVals:  number[] = []
-      for (const [pid, delta] of neededMap) {
-        caseParts.push('WHEN ? THEN ?')
-        caseVals.push(pid, delta)
-      }
-      const idsPh   = [...neededMap.keys()].map(() => '?').join(',')
-      const idsVals = [...neededMap.keys()]
-      await conn.execute(
-        `UPDATE productos
-         SET stock_actual = stock_actual - (CASE id ${caseParts.join(' ')} END)
-         WHERE id IN (${idsPh})`,
-        [...caseVals, ...idsVals]
-      )
-
-      // ── Paso 5: bulk INSERT movimientos_stock ────────────────────────────
-      const movVals = payload.items.flatMap(i => [i.producto_id, vendedorId, TIPO_MOV_SALIDA, -i.cantidad, `Venta #${ventaId}`])
-      const movPh   = payload.items.map(() => '(?,?,?,?,?)').join(',')
-      await conn.execute(
-        `INSERT INTO movimientos_stock (producto_id, usuario_id, tipo_movimiento_id, cantidad, motivo) VALUES ${movPh}`,
-        movVals
-      )
-
-      await conn.commit()
-      return this.getById(ventaId) as Promise<Venta>
-    } catch (err) {
-      await conn.rollback()
-      throw err
-    } finally {
-      conn.release()
+    const subtotal   = payload.items.reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0)
+    const descuento  = payload.descuento ?? 0
+    const interesPct = payload.interes_porcentaje ?? 0
+    // Recalcular siempre en backend para evitar inconsistencias con el frontend.
+    // Si el cliente envió interes_monto, validar que coincida (tolerancia 0.01).
+    const interesCalc = Math.round((subtotal * interesPct / 100) * 100) / 100
+    if (payload.interes_monto !== undefined && Math.abs(payload.interes_monto - interesCalc) > 0.01) {
+      throw new Error(`interes_monto inconsistente: esperado ${interesCalc}, recibido ${payload.interes_monto}`)
     }
+    const interesAmt = interesCalc
+
+    // Reintenta una vez ante carrera del trigger numero_venta (ER_DUP_ENTRY).
+    let lastErr: unknown = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const conn = await pool.getConnection()
+      try {
+        await conn.beginTransaction()
+
+        // Insertar venta (numero_venta lo maneja el trigger de la DB)
+        const [ventaResult] = await conn.execute<any>(
+          `INSERT INTO ventas
+             (numero_venta, cliente_id, vendedor_id, metodo_pago_id, tipo_tarjeta_id,
+              cuotas, subtotal, descuento, interes_porcentaje, interes_monto, estado_id, notas)
+           VALUES (0, ?,?,?,?,?,?,?,?,?,?,?)`,
+          [
+            payload.cliente_id ?? null,
+            vendedorId,
+            payload.metodo_pago_id,
+            payload.tipo_tarjeta_id ?? null,
+            payload.cuotas ?? 1,
+            subtotal,
+            descuento,
+            interesPct,
+            interesAmt,
+            ESTADO_ID.completada,
+            payload.notas ?? null,
+          ]
+        )
+        const ventaId = (ventaResult as { insertId: number }).insertId
+
+        // ── Paso 1: bloquear productos activos de una vez ────────────────────
+        const productIds = payload.items.map(i => i.producto_id)
+        const inPh = productIds.map(() => '?').join(',')
+        const [stockRows] = await conn.execute<any[]>(
+          `SELECT id, nombre, stock_actual FROM productos
+           WHERE id IN (${inPh}) AND activo = 1 FOR UPDATE`,
+          productIds
+        )
+
+        // Detectar productos inactivos / inexistentes
+        const foundIds = new Set(stockRows.map((r: any) => Number(r.id)))
+        const missing  = [...new Set(productIds)].filter(id => !foundIds.has(id))
+        if (missing.length > 0) {
+          throw new Error(`Producto(s) inactivo(s) o inexistente(s): ${missing.join(', ')}`)
+        }
+
+        // ── Paso 2: verificar stock (acumular si hay duplicados de producto) ─
+        const stockMap   = new Map<number, number>()
+        const nombreMap  = new Map<number, string>()
+        const neededMap  = new Map<number, number>()
+        for (const row of stockRows) {
+          stockMap.set(Number(row.id), Number(row.stock_actual))
+          nombreMap.set(Number(row.id), String(row.nombre))
+        }
+        for (const item of payload.items) {
+          neededMap.set(item.producto_id, (neededMap.get(item.producto_id) ?? 0) + item.cantidad)
+        }
+        for (const [pid, needed] of neededMap) {
+          const available = stockMap.get(pid) ?? 0
+          if (available < needed) {
+            const nombre = nombreMap.get(pid) ?? `#${pid}`
+            throw new Error(
+              `Stock insuficiente para "${nombre}" (disponible: ${available}, requerido: ${needed})`
+            )
+          }
+        }
+
+        // ── Paso 3: bulk INSERT venta_items ──────────────────────────────────
+        const itemVals = payload.items.flatMap(i => [ventaId, i.producto_id, i.cantidad, i.precio_unitario])
+        const itemPh   = payload.items.map(() => '(?,?,?,?)').join(',')
+        await conn.execute(
+          `INSERT INTO venta_items (venta_id, producto_id, cantidad, precio_unitario) VALUES ${itemPh}`,
+          itemVals
+        )
+
+        // ── Paso 4: bulk UPDATE stock con CASE WHEN (1 query) ────────────────
+        const caseParts: string[] = []
+        const caseVals:  number[] = []
+        for (const [pid, delta] of neededMap) {
+          caseParts.push('WHEN ? THEN ?')
+          caseVals.push(pid, delta)
+        }
+        const idsPh   = [...neededMap.keys()].map(() => '?').join(',')
+        const idsVals = [...neededMap.keys()]
+        await conn.execute(
+          `UPDATE productos
+           SET stock_actual = stock_actual - (CASE id ${caseParts.join(' ')} END)
+           WHERE id IN (${idsPh})`,
+          [...caseVals, ...idsVals]
+        )
+
+        // ── Paso 5: bulk INSERT movimientos_stock ────────────────────────────
+        const movVals = payload.items.flatMap(i => [i.producto_id, vendedorId, TIPO_MOV_SALIDA, -i.cantidad, `Venta #${ventaId}`])
+        const movPh   = payload.items.map(() => '(?,?,?,?,?)').join(',')
+        await conn.execute(
+          `INSERT INTO movimientos_stock (producto_id, usuario_id, tipo_movimiento_id, cantidad, motivo) VALUES ${movPh}`,
+          movVals
+        )
+
+        await conn.commit()
+        return this.getById(ventaId) as Promise<Venta>
+      } catch (err) {
+        await conn.rollback()
+        const code = (err as { code?: string }).code
+        // Si fue colisión del trigger numero_venta, reintentar.
+        if (code === 'ER_DUP_ENTRY' && attempt === 0) {
+          lastErr = err
+          continue
+        }
+        throw err
+      } finally {
+        conn.release()
+      }
+    }
+    throw lastErr ?? new Error('No se pudo crear la venta')
   },
 
-  async cancelar(id: number): Promise<void> {
+  async cancelar(id: number, usuarioId: number): Promise<void> {
     const conn = await pool.getConnection()
     try {
       await conn.beginTransaction()
@@ -271,7 +310,7 @@ export const ventasService = {
 
         // Bulk INSERT movimientos (entradas por devolución)
         const movVals = items.flatMap((i: any) => [
-          Number(i.producto_id), null, TIPO_MOV_ENTRADA, Number(i.cantidad), `Cancelación venta #${id}`,
+          Number(i.producto_id), usuarioId, TIPO_MOV_ENTRADA, Number(i.cantidad), `Cancelación venta #${id}`,
         ])
         const movPh = items.map(() => '(?,?,?,?,?)').join(',')
         await conn.execute(

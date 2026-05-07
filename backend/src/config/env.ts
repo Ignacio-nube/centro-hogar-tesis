@@ -24,7 +24,16 @@ export const env = {
     expiresIn: process.env['JWT_EXPIRES_IN'] ?? '8h',
   },
 
-  frontendUrl: process.env['FRONTEND_URL'] ?? 'http://localhost:5173',
+  frontendUrl: (() => {
+    const url = process.env['FRONTEND_URL']
+    if (!url) {
+      if (process.env['NODE_ENV'] === 'production') {
+        throw new Error('FRONTEND_URL es requerida en production (CORS no puede aceptar cualquier origen).')
+      }
+      return 'http://localhost:5173'
+    }
+    return url
+  })(),
 
   adminSeed: {
     email:    required('ADMIN_EMAIL'),

@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { CheckCircle, Download, RotateCcw, List, UserX, Banknote, CreditCard, ArrowLeftRight } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
-import { TicketPDF } from '@/features/reportes/pdf/TicketPDF'
-import { PDFDownloadLink } from '@react-pdf/renderer'
+import { downloadTicketPDF } from '@/features/reportes/pdf/lazyDownload'
 import type { SaleWizardState, Venta } from '@/types/app.types'
 
 interface Step4Props {
@@ -46,6 +47,8 @@ export function Step4Confirm({
   onNewSale,
   onGoToVentas,
 }: Step4Props) {
+  const [downloading, setDownloading] = useState(false)
+
   /* ── SUCCESS SCREEN ──────────────────────────────────────────── */
   if (completedVenta) {
     const clientLabel = completedVenta.cliente
@@ -88,17 +91,24 @@ export function Step4Confirm({
 
         {/* Action buttons */}
         <div className="flex flex-col gap-2 w-full">
-          <PDFDownloadLink
-            document={<TicketPDF venta={completedVenta} items={state.items} />}
-            fileName={`ticket-${completedVenta.numero_venta}.pdf`}
+          <Button
+            variant="outline"
+            className="w-full h-11"
+            disabled={downloading}
+            onClick={async () => {
+              setDownloading(true)
+              try {
+                await downloadTicketPDF(completedVenta, state.items)
+              } catch (err) {
+                toast.error(`No se pudo generar el ticket: ${(err as Error).message}`)
+              } finally {
+                setDownloading(false)
+              }
+            }}
           >
-            {({ loading }) => (
-              <Button variant="outline" className="w-full h-11" disabled={loading}>
-                <Download data-icon="inline-start" />
-                {loading ? 'Generando...' : 'Descargar ticket'}
-              </Button>
-            )}
-          </PDFDownloadLink>
+            <Download data-icon="inline-start" />
+            {downloading ? 'Generando...' : 'Descargar ticket'}
+          </Button>
           <Button
             className="w-full h-12 bg-brand hover:bg-brand-dark text-white font-semibold"
             onClick={onNewSale}

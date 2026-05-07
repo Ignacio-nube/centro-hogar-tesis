@@ -48,6 +48,11 @@ export const reportesService = {
   },
 
   async productosTopVentas(limit = 10) {
+    // Acotar a 365 días: con 60k+ ventas, agrupar todo el histórico es lento.
+    const desde = new Date()
+    desde.setDate(desde.getDate() - 365)
+    const desdeStr = desde.toISOString().slice(0, 19).replace('T', ' ')
+
     const [rows] = await pool.execute<any[]>(
       `SELECT p.id, p.codigo, p.nombre,
               SUM(vi.cantidad)                        AS unidades_vendidas,
@@ -55,11 +60,11 @@ export const reportesService = {
        FROM venta_items vi
        JOIN productos p ON p.id = vi.producto_id
        JOIN ventas v     ON v.id = vi.venta_id
-       WHERE v.estado_id = 1
+       WHERE v.estado_id = 1 AND v.created_at >= ?
        GROUP BY p.id
        ORDER BY unidades_vendidas DESC
        LIMIT ?`,
-      [limit]
+      [desdeStr, limit]
     )
     return rows
   },
@@ -141,6 +146,10 @@ export const reportesService = {
   },
 
   async clientesTopCompras(limit = 10) {
+    const desde = new Date()
+    desde.setDate(desde.getDate() - 365)
+    const desdeStr = desde.toISOString().slice(0, 19).replace('T', ' ')
+
     const [rows] = await pool.execute<any[]>(
       `SELECT c.id,
               CONCAT(c.nombre, ' ', c.apellido) AS cliente,
@@ -148,11 +157,11 @@ export const reportesService = {
               COALESCE(SUM(v.total_final), 0)   AS monto_total
        FROM ventas v
        JOIN clientes c ON c.id = v.cliente_id
-       WHERE v.estado_id = 1
+       WHERE v.estado_id = 1 AND v.created_at >= ?
        GROUP BY c.id
        ORDER BY monto_total DESC
        LIMIT ?`,
-      [limit]
+      [desdeStr, limit]
     )
     return rows
   },
