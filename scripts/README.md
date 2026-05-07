@@ -1,84 +1,107 @@
 # Scripts de base de datos — Centro Hogar
 
-Scripts PowerShell para llevar la base `centro_hogar` a otra PC sin pasar por
-phpMyAdmin manualmente.
+Scripts PowerShell para crear y mover la base `centro_hogar` entre PCs sin
+pasar por phpMyAdmin manualmente.
+
+## Scripts disponibles
+
+| Script | Para qué sirve |
+|--------|----------------|
+| `crear-base-vacia.ps1` | Crea la base `centro_hogar` con la **estructura sola** (tablas, vistas, triggers). Sin datos. |
+| `cargar-datos-de-prueba.ps1` | Ejecuta `seed.sql` y carga 22 usuarios, 150 clientes, 120 productos y ~64.000 ventas con distribución estacional realista. Tarda 5-15 min. |
+| `exportar-base-completa.ps1` | Genera un `.sql` con la **estructura + datos reales actuales** (mediante `mysqldump`). Útil para llevarse la base con todo a otra PC. |
+| `importar-base-completa.ps1` | Restaura un `.sql` exportado previamente (o cualquier dump compatible). |
 
 ## Requisitos previos
 
-1. **MySQL/MariaDB instalado** en la PC destino (XAMPP, WAMP, MySQL Server).
+1. **MySQL/MariaDB instalado** (XAMPP, WAMP, MySQL Server).
 2. **`mysql.exe` y `mysqldump.exe` en el PATH**. Si usás XAMPP:
+   ```powershell
+   setx PATH "$env:PATH;C:\xampp\mysql\bin"
    ```
-   setx PATH "%PATH%;C:\xampp\mysql\bin"
-   ```
-   Después abrí una terminal nueva.
+   Cerrá la terminal y abrí una nueva.
 
 ## Casos de uso
 
-### A) Llevar la app a una PC nueva — solo estructura, sin datos
+### A) PC nueva con datos de prueba (recomendado para tesis/desarrollo)
 
-Ideal para empezar limpio. El admin inicial se crea automáticamente cuando
-arrancás el backend (mirá `ADMIN_EMAIL` / `ADMIN_PASSWORD` en `backend/.env`).
-
-```powershell
-cd scripts
-.\db-setup.ps1
-```
-
-Por defecto se conecta a `localhost:3306` con usuario `root` sin contraseña.
-Si tu MySQL tiene credenciales:
-
-```powershell
-.\db-setup.ps1 -DbUser admin -DbPass "miclave"
-```
-
-### B) Llevar la app con todos los datos reales
-
-En la PC actual, exportá un dump completo:
+Crea la estructura y carga los 64k registros del `seed.sql`:
 
 ```powershell
 cd scripts
-.\db-export.ps1
+.\crear-base-vacia.ps1
+.\cargar-datos-de-prueba.ps1
 ```
 
-Eso genera `backups/centro_hogar_<fecha>_completo.sql` (incluye estructura,
-datos, triggers y vistas). Copiá ese archivo a la PC nueva.
+Te quedan los 3 usuarios de prueba (todos con password `test123`):
 
-En la PC nueva:
+| Email | Rol |
+|-------|-----|
+| `admin@centrohogar.com` | Administrador |
+| `elena.correa@centrohogar.com` | Encargado de stock |
+| `lucas.garcia@centrohogar.com` | Vendedor |
+
+### B) PC nueva sin datos (empezar de cero)
+
+Solo crea la estructura. El admin inicial se genera automáticamente al
+arrancar el backend (toma `ADMIN_EMAIL` y `ADMIN_PASSWORD` del `.env`):
 
 ```powershell
 cd scripts
-.\db-import.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
+.\crear-base-vacia.ps1
 ```
 
-> **Nota:** el dump incluye `CREATE DATABASE IF NOT EXISTS centro_hogar` y
-> `USE centro_hogar`, así que no hace falta crear la base a mano antes.
+### C) Migrar la base actual con todos los datos a otra PC
 
-### C) Backup periódico (solo datos actuales)
+En la PC origen:
 
 ```powershell
-.\db-export.ps1 -OutFile "D:\backups\ch_$(Get-Date -Format yyyyMMdd).sql"
+cd scripts
+.\exportar-base-completa.ps1
 ```
 
-### D) Solo estructura (para desarrollo)
+Esto genera `backups/centro_hogar_<fecha>_completo.sql` (estructura + datos
+reales + triggers + vistas). Copiá ese archivo a la PC destino.
+
+En la PC destino:
 
 ```powershell
-.\db-export.ps1 -SoloEstructura
+cd scripts
+.\importar-base-completa.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
 ```
 
-Genera `_estructura.sql` sin filas — útil si querés un schema limpio para
-diff o para revisar índices.
+> El dump incluye `CREATE DATABASE IF NOT EXISTS centro_hogar`, así que
+> no hace falta crear la base a mano antes.
 
-## Después del setup
+### D) Backup periódico
 
-1. Copiá `backend/.env.example` a `backend/.env` y completá:
-   - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` — credenciales del MySQL local
-   - `JWT_SECRET` — string aleatorio de al menos 32 caracteres
-   - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — credenciales del primer admin
-2. `cd backend && npm install && npm run dev`
-3. `cd centro-hogar && npm install && npm run dev`
+```powershell
+.\exportar-base-completa.ps1 -OutFile "D:\backups\ch_$(Get-Date -Format yyyyMMdd).sql"
+```
 
-El backend, al arrancar, detecta que no hay admin en la base y crea uno con
-las variables `ADMIN_*`.
+### E) Solo estructura (para diff/revisión de schema)
+
+```powershell
+.\exportar-base-completa.ps1 -SoloEstructura
+```
+
+## Argumentos comunes
+
+Todos los scripts aceptan estos parámetros (con defaults útiles para XAMPP):
+
+| Parámetro | Default | Descripción |
+|-----------|---------|-------------|
+| `-DbHost` | `localhost` | Host del servidor MySQL |
+| `-DbPort` | `3306` | Puerto |
+| `-DbUser` | `root` | Usuario |
+| `-DbPass` | (vacío) | Contraseña — pasá entre comillas si tiene caracteres especiales |
+| `-DbName` | `centro_hogar` | Nombre de la base |
+
+Ejemplo con credenciales:
+
+```powershell
+.\crear-base-vacia.ps1 -DbUser admin -DbPass "MiClave!2026"
+```
 
 ## Solución de problemas
 
@@ -86,7 +109,10 @@ las variables `ADMIN_*`.
   PATH del sistema y reabrí la terminal.
 - **`Access denied for user 'root'@'localhost'`**: pasá `-DbUser` y `-DbPass`
   con tus credenciales reales.
-- **El dump pesa mucho**: con 60k+ ventas el `.sql` puede pasar 100 MB. Es
+- **El dump pesa mucho**: con 64k+ ventas el `.sql` puede pasar 100 MB. Es
   esperable; para reducir tamaño usá `-SoloEstructura`.
-- **Errores de charset**: los scripts usan `utf8mb4` siempre. Si ves
-  caracteres raros, asegurate de que tu MySQL esté en `utf8mb4_unicode_ci`.
+- **`cargar-datos-de-prueba.ps1` falla con "Table doesn't exist"**: corré
+  primero `.\crear-base-vacia.ps1` para tener la estructura.
+- **Errores de charset / acentos raros**: los scripts usan `utf8mb4` siempre.
+  Si ves caracteres incorrectos, asegurate de que tu MySQL esté en
+  `utf8mb4_unicode_ci`.

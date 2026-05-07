@@ -1,11 +1,13 @@
 # ============================================================
-# Centro Hogar — Importar un dump .sql en MySQL
+# Centro Hogar — Importar base completa desde archivo .sql
 # ============================================================
-# Restaura un .sql generado con db-export.ps1 (o con phpMyAdmin).
+# Restaura un .sql generado con .\exportar-base-completa.ps1
+# (o con phpMyAdmin / mysqldump). Sobrescribe los datos existentes
+# si la base ya existe.
 #
 # Uso:
-#   .\db-import.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
-#   .\db-import.ps1 -InFile dump.sql -DbUser admin -DbPass "miclave"
+#   .\importar-base-completa.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
+#   .\importar-base-completa.ps1 -InFile dump.sql -DbUser admin -DbPass "miclave"
 # ============================================================
 
 param(

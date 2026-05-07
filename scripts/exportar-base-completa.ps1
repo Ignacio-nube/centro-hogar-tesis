@@ -1,14 +1,17 @@
 # ============================================================
-# Centro Hogar — Exportar dump completo de la base
+# Centro Hogar — Exportar base completa a archivo .sql
 # ============================================================
-# Genera un .sql con estructura + datos para llevar a otra PC.
-# Por defecto guarda en backups/centro_hogar_<fecha>.sql
+# Genera un .sql con estructura + datos REALES de la base actual,
+# pensado para llevar la app con sus datos a otra PC.
+# Por defecto guarda en backups/centro_hogar_<fecha>_completo.sql
+#
+# Para restaurar el archivo en otra PC: .\importar-base-completa.ps1
 #
 # Uso:
-#   .\db-export.ps1
-#   .\db-export.ps1 -DbUser admin -DbPass "miclave"
-#   .\db-export.ps1 -OutFile "C:\temp\midump.sql"
-#   .\db-export.ps1 -SoloEstructura          # sin datos (solo schema)
+#   .\exportar-base-completa.ps1
+#   .\exportar-base-completa.ps1 -DbUser admin -DbPass "miclave"
+#   .\exportar-base-completa.ps1 -OutFile "C:\temp\midump.sql"
+#   .\exportar-base-completa.ps1 -SoloEstructura     # sin datos (solo schema)
 # ============================================================
 
 param(
@@ -24,7 +27,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not (Get-Command mysqldump.exe -ErrorAction SilentlyContinue)) {
-  Write-Error "mysqldump.exe no esta en el PATH. Ver db-setup.ps1 para configurarlo."
+  Write-Error "mysqldump.exe no esta en el PATH. Ver scripts/README.md para configurarlo."
   exit 1
 }
 
@@ -77,4 +80,4 @@ Write-Host ""
 Write-Host "Dump generado correctamente." -ForegroundColor Green
 Write-Host "  $OutFile  ($sizeMB MB)"
 Write-Host ""
-Write-Host "Para restaurarlo en otra PC: .\db-import.ps1 -InFile `"$OutFile`""
+Write-Host "Para restaurarlo en otra PC: .\importar-base-completa.ps1 -InFile `"$OutFile`""

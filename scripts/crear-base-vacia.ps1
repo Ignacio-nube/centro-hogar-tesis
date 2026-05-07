@@ -1,17 +1,20 @@
 # ============================================================
-# Centro Hogar — Setup de base de datos en una PC nueva
+# Centro Hogar — Crear base 'centro_hogar' vacia
 # ============================================================
 # Crea la base 'centro_hogar' y aplica el esquema (database.sql)
-# en una instalacion limpia de MySQL/MariaDB.
+# en una instalacion limpia de MySQL/MariaDB. No carga datos.
+#
+# Para cargar los datos de prueba (clientes, productos, 64k ventas)
+# ejecuta despues: .\cargar-datos-de-prueba.ps1
 #
 # Requisitos:
 #   - mysql.exe en el PATH (XAMPP/WAMP/MySQL Server)
 #   - Permisos de root (o un usuario con CREATE DATABASE)
 #
 # Uso:
-#   .\db-setup.ps1                                  # localhost, root sin pass
-#   .\db-setup.ps1 -DbUser admin -DbPass "miclave"
-#   .\db-setup.ps1 -DbHost 192.168.1.50 -DbPort 3306
+#   .\crear-base-vacia.ps1                                  # localhost, root sin pass
+#   .\crear-base-vacia.ps1 -DbUser admin -DbPass "miclave"
+#   .\crear-base-vacia.ps1 -DbHost 192.168.1.50 -DbPort 3306
 # ============================================================
 
 param(
@@ -69,4 +72,9 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Listo. Base '$DbName' creada y esquema aplicado." -ForegroundColor Green
-Write-Host "El admin inicial se crea automaticamente al arrancar el backend (variables ADMIN_* en backend/.env)."
+Write-Host ""
+Write-Host "Que sigue:"
+Write-Host "  - Para empezar de cero: arranca el backend y el admin inicial"
+Write-Host "    se crea automaticamente con las variables ADMIN_* del .env."
+Write-Host "  - Para tener datos de prueba (recomendado para desarrollo/tesis):"
+Write-Host "    .\cargar-datos-de-prueba.ps1"

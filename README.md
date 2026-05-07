@@ -54,7 +54,7 @@ cd centro-hogar-tesis
 
 ### 2. Crear la base de datos
 
-Hay dos formas: con los scripts (recomendado, automático) o con phpMyAdmin (manual). Elegí una.
+Hay dos formas: con los scripts (recomendado, automático) o con phpMyAdmin (manual).
 
 #### Opción A — Con los scripts de PowerShell (recomendado)
 
@@ -68,41 +68,44 @@ setx PATH "$env:PATH;C:\xampp\mysql\bin"
 
 Cerrá la terminal y abrí una nueva para que tome el cambio.
 
-**A.1) Si querés empezar con la base vacía** (solo estructura, sin datos):
+**A.1) Con datos de prueba** — recomendado para tesis y desarrollo. Carga 22 usuarios, 150 clientes, 120 productos y ~64.000 ventas con distribución estacional realista. Tarda 5-15 min.
 
 ```powershell
 cd scripts
-.\db-setup.ps1
+.\crear-base-vacia.ps1
+.\cargar-datos-de-prueba.ps1
 ```
 
-Por defecto se conecta a `localhost:3306` con usuario `root` sin contraseña. Si tu MySQL tiene otras credenciales:
+**A.2) Sin datos** — base vacía para empezar de cero. El admin inicial se crea automáticamente al arrancar el backend (paso 4) con los valores de `ADMIN_EMAIL` y `ADMIN_PASSWORD` del `.env`.
 
 ```powershell
-.\db-setup.ps1 -DbUser admin -DbPass "miclave"
+cd scripts
+.\crear-base-vacia.ps1
 ```
 
-El usuario admin inicial se crea automáticamente al arrancar el backend (paso 4), tomando los valores de `ADMIN_EMAIL` y `ADMIN_PASSWORD` del `.env`.
-
-**A.2) Si querés migrar la base desde otra PC con todos los datos reales**:
+**A.3) Migrar desde otra PC con todos los datos reales** (no datos de prueba):
 
 En la PC origen (la que ya tiene la app funcionando):
 
 ```powershell
 cd scripts
-.\db-export.ps1
+.\exportar-base-completa.ps1
 ```
 
-Esto genera `backups/centro_hogar_<fecha>_completo.sql` con estructura, datos, triggers y vistas. Copiá ese archivo a la PC destino (USB, Drive, etc.).
-
-En la PC destino, parado en `scripts/`:
+Eso genera `backups/centro_hogar_<fecha>_completo.sql`. Copialo a la PC destino y ahí:
 
 ```powershell
-.\db-import.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
+cd scripts
+.\importar-base-completa.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
 ```
 
-Te va a pedir confirmación antes de ejecutar.
+Por defecto los scripts se conectan a `localhost:3306` con usuario `root` sin contraseña. Si tu MySQL tiene otras credenciales, pasá `-DbUser` y `-DbPass`:
 
-> Más detalles en [`scripts/README.md`](scripts/README.md), incluyendo qué hacer si `mysql.exe` no está en el PATH.
+```powershell
+.\crear-base-vacia.ps1 -DbUser admin -DbPass "MiClave!2026"
+```
+
+> Más detalles en [`scripts/README.md`](scripts/README.md).
 
 #### Opción B — Manual con phpMyAdmin
 
@@ -110,7 +113,7 @@ Te va a pedir confirmación antes de ejecutar.
 2. Creá una nueva base de datos llamada **`centro_hogar`** con cotejamiento `utf8mb4_unicode_ci`
 3. Seleccioná la base `centro_hogar` y andá a la pestaña **Importar**
 4. Importá `database.sql` (estructura)
-5. (Opcional) Importá `seed.sql` (datos de prueba)
+5. (Opcional) Importá `seed.sql` (datos de prueba — desde la consola conviene más usar `cargar-datos-de-prueba.ps1` porque phpMyAdmin suele timeout antes de terminar las 64k ventas)
 
 ### 3. Configurar el backend
 
