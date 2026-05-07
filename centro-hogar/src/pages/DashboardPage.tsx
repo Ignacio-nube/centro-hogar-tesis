@@ -8,7 +8,7 @@ import { ventasService } from '@/features/ventas/services/ventasService'
 import { productosService } from '@/features/productos/services/productosService'
 import { clientesService } from '@/features/clientes/services/clientesService'
 import { reportesService } from '@/features/reportes/services/reportesService'
-import type { DashboardData } from '@/features/reportes/services/reportesService'
+import type { DashboardData, DashboardPeriodo } from '@/features/reportes/services/reportesService'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { ChartContainer } from '@/components/ui/chart'
@@ -57,21 +57,6 @@ function AreaTooltip({ active, payload, label }: any) {
     >
       <p className="font-medium mb-1 text-white/70">{label}</p>
       <p className="font-semibold">{formatCurrency(Number(payload[0].value))}</p>
-    </div>
-  )
-}
-
-// ─── Custom tooltip donut ────────────────────────────────────────────────────
-function DonutTooltip({ active, payload }: any) {
-  if (!active || !payload?.length) return null
-  const entry = payload[0]
-  return (
-    <div
-      className="rounded-lg px-3 py-2 text-xs shadow-lg"
-      style={{ backgroundColor: 'oklch(0.145 0 0)', border: `1px solid ${entry.payload.fill}`, color: 'white' }}
-    >
-      <p className="font-semibold">{entry.name}</p>
-      <p className="text-white/70">{entry.value} unidades</p>
     </div>
   )
 }
@@ -169,20 +154,45 @@ function KpiCard({
   )
 }
 
+// ─── Custom tooltip donut con % ──────────────────────────────────────────────
+function DonutTooltipPct({ active, payload, totalUnidades }: any) {
+  if (!active || !payload?.length) return null
+  const entry = payload[0]
+  const pct = totalUnidades > 0 ? ((entry.value / totalUnidades) * 100).toFixed(1) : '0'
+  return (
+    <div
+      className="rounded-lg px-3 py-2 text-xs shadow-lg"
+      style={{ backgroundColor: 'oklch(0.145 0 0)', border: `1px solid ${entry.payload.fill}`, color: 'white' }}
+    >
+      <p className="font-semibold mb-0.5">{entry.name}</p>
+      <p className="text-white/70">{entry.value} unidades · {pct}%</p>
+      {entry.payload.ingreso > 0 && (
+        <p className="text-white/70">{formatCurrency(entry.payload.ingreso)}</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Gráfico: donut categorías + panel lateral productos ─────────────────────
 const ALL_KEY = '__all__'
 
-function GraficoCategorias({ data, isLoading, isError, onRetry }: {
+function GraficoCategorias({ data, isLoading, isError, onRetry, periodo }: {
   data: DashboardData | undefined
   isLoading: boolean
   isError: boolean
   onRetry: () => void
+  periodo: DashboardPeriodo
 }) {
   const [selectedCat, setSelectedCat] = useState<string>(ALL_KEY)
 
   const handleSliceClick = useCallback((entry: any) => {
     setSelectedCat((prev) => prev === entry.name ? ALL_KEY : entry.name)
   }, [])
+
+  const periodoLabel = periodo === 'semana' ? 'la última semana'
+                     : periodo === 'mes' ? 'el último mes'
+                     : periodo === 'trimestre' ? 'el último trimestre'
+                     : 'el último año'
 
   if (isLoading) return <Skeleton className="h-72 w-full" />
   if (isError) return (
@@ -202,34 +212,39 @@ function GraficoCategorias({ data, isLoading, isError, onRetry }: {
   if (cats.length === 0) {
     return (
       <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">
-        Sin datos de ventas en el último mes
+        Sin datos de ventas en {periodoLabel}
       </div>
     )
   }
 
-  // Datos del donut (solo categorías)
+  // Datos del donut (solo categorías) + totales para mostrar al centro / %
   const donutData = cats.map((c, i) => ({
-    name:  c.categoria,
-    value: c.unidades,
-    fill:  getCatColor(i, 0),
-    index: i,
+    name:    c.categoria,
+    value:   c.unidades,
+    ingreso: c.ingreso,
+    fill:    getCatColor(i, 0),
+    index:   i,
   }))
+
+  const totalUnidades = donutData.reduce((acc, d) => acc + d.value, 0)
+  const totalIngreso  = donutData.reduce((acc, d) => acc + d.ingreso, 0)
 
   const activeIndex = donutData.findIndex((d) => d.name === selectedCat)
 
   // Datos del panel lateral
-  const panelData: { producto: string; unidades: number; fill: string }[] = (() => {
+  const panelData: { producto: string; unidades: number; ingreso: number; fill: string }[] = (() => {
     if (selectedCat === ALL_KEY) {
-      // Suma todas las unidades por producto (excluyendo "Otros") y toma top 5
-      const totals: Record<string, number> = {}
+      // Suma todas las unidades+ingreso por producto (excluyendo "Otros") y toma top 5
+      const totals: Record<string, { unidades: number; ingreso: number }> = {}
       for (const p of prods) {
         if (p.producto === 'Otros') continue
-        totals[p.producto] = (totals[p.producto] ?? 0) + p.unidades
+        const cur = totals[p.producto] ?? { unidades: 0, ingreso: 0 }
+        totals[p.producto] = { unidades: cur.unidades + p.unidades, ingreso: cur.ingreso + p.ingreso }
       }
       return Object.entries(totals)
-        .sort((a, b) => b[1] - a[1])
+        .sort((a, b) => b[1].unidades - a[1].unidades)
         .slice(0, 5)
-        .map(([producto, unidades]) => ({ producto, unidades, fill: 'var(--brand)' }))
+        .map(([producto, t]) => ({ producto, unidades: t.unidades, ingreso: t.ingreso, fill: 'var(--brand)' }))
     }
     const catIdx = cats.findIndex((c) => c.categoria === selectedCat)
     return prods
@@ -237,6 +252,7 @@ function GraficoCategorias({ data, isLoading, isError, onRetry }: {
       .map((p, i) => ({
         producto: p.producto,
         unidades: p.unidades,
+        ingreso:  p.ingreso,
         fill:     getCatColor(catIdx, i + 1),
       }))
   })()
@@ -247,39 +263,73 @@ function GraficoCategorias({ data, isLoading, isError, onRetry }: {
 
   const maxUnidades = Math.max(...panelData.map((p) => p.unidades), 1)
 
+  // Información para mostrar al centro del donut
+  const centerInfo = activeIndex >= 0
+    ? {
+        label: donutData[activeIndex].name,
+        unidades: donutData[activeIndex].value,
+        ingreso:  donutData[activeIndex].ingreso,
+        pct: totalUnidades > 0 ? Math.round((donutData[activeIndex].value / totalUnidades) * 100) : 0,
+      }
+    : {
+        label: 'Total',
+        unidades: totalUnidades,
+        ingreso:  totalIngreso,
+        pct: 100,
+      }
+
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:gap-0">
       {/* ── Donut ── */}
       <div className="flex flex-col items-center sm:w-1/2">
-        <ChartContainer config={{}} className="h-56 w-full max-w-xs">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={donutData}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                innerRadius="42%"
-                outerRadius="65%"
-                paddingAngle={3}
-                strokeWidth={0}
-                cursor="pointer"
-                {...(activeIndex >= 0 ? { activeIndex, activeShape: ActiveSlice } : {})}
-                onClick={handleSliceClick}
-              >
-                {donutData.map((entry, i) => (
-                  <Cell
-                    key={i}
-                    fill={entry.fill}
-                    opacity={selectedCat === ALL_KEY || selectedCat === entry.name ? 1 : 0.35}
-                  />
-                ))}
-              </Pie>
-              <Tooltip content={<DonutTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartContainer>
+        <div className="relative h-56 w-full max-w-xs">
+          <ChartContainer config={{}} className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={donutData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="55%"
+                  outerRadius="80%"
+                  paddingAngle={3}
+                  strokeWidth={0}
+                  cursor="pointer"
+                  {...(activeIndex >= 0 ? { activeIndex, activeShape: ActiveSlice } : {})}
+                  onClick={handleSliceClick}
+                >
+                  {donutData.map((entry, i) => (
+                    <Cell
+                      key={i}
+                      fill={entry.fill}
+                      opacity={selectedCat === ALL_KEY || selectedCat === entry.name ? 1 : 0.35}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  content={<DonutTooltipPct totalUnidades={totalUnidades} />}
+                  wrapperStyle={{ zIndex: 50, outline: 'none' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartContainer>
+
+          {/* Total / categoría seleccionada al centro (z-0 para que el tooltip lo cubra) */}
+          <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{centerInfo.label}</span>
+            <span className="text-xl font-bold tabular-nums">{centerInfo.unidades} u</span>
+            {centerInfo.ingreso > 0 && (
+              <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                {formatCurrency(centerInfo.ingreso)}
+              </span>
+            )}
+            {selectedCat !== ALL_KEY && (
+              <span className="text-[10px] text-muted-foreground mt-0.5">{centerInfo.pct}% del total</span>
+            )}
+          </div>
+        </div>
 
         {/* Leyenda */}
         <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 mt-1">
@@ -326,17 +376,22 @@ function GraficoCategorias({ data, isLoading, isError, onRetry }: {
               const pct = Math.round((p.unidades / maxUnidades) * 100)
               return (
                 <div key={i} className="flex flex-col gap-0.5">
-                  <div className="flex justify-between items-baseline">
-                    <span className="text-xs text-foreground truncate max-w-[60%]">{p.producto}</span>
-                    <span className="text-xs font-semibold tabular-nums text-muted-foreground shrink-0">
-                      {p.unidades} u
-                    </span>
+                  <div className="flex justify-between items-baseline gap-2">
+                    <span className="text-xs text-foreground truncate flex-1">{p.producto}</span>
+                    <span className="text-xs font-semibold tabular-nums shrink-0">{p.unidades} u</span>
                   </div>
-                  <div className="h-1.5 w-full rounded-full bg-zinc-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%`, backgroundColor: p.fill }}
-                    />
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 rounded-full bg-zinc-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, backgroundColor: p.fill }}
+                      />
+                    </div>
+                    {p.ingreso > 0 && (
+                      <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 w-[68px] text-right">
+                        {formatCurrency(p.ingreso)}
+                      </span>
+                    )}
                   </div>
                 </div>
               )
@@ -434,11 +489,19 @@ export default function DashboardPage() {
     staleTime: 1000 * 60 * 10,
   })
 
+  const [periodo, setPeriodo] = useState<DashboardPeriodo>('mes')
+
   const { data: dashData, isLoading: loadingDash, isError: errorDash, refetch: refetchDash } = useQuery({
-    queryKey: ['dashboard-data'],
-    queryFn: () => reportesService.getDashboardData(),
+    queryKey: ['dashboard-data', periodo],
+    queryFn: () => reportesService.getDashboardData(periodo),
     staleTime: 1000 * 60 * 10,
+    placeholderData: (prev) => prev,
   })
+
+  const periodoLabel = periodo === 'semana' ? 'Última semana'
+                     : periodo === 'mes' ? 'Último mes'
+                     : periodo === 'trimestre' ? 'Últimos 90 días'
+                     : 'Último año'
 
   return (
     <div className="flex flex-col gap-6">
@@ -585,11 +648,30 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Donut categorías + panel productos */}
         <Card className="lg:col-span-2 rounded-xl">
-          <CardHeader>
-            <CardTitle className="text-base">Productos más vendidos por categoría</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Último mes · Hacé click en una categoría para filtrar
-            </p>
+          <CardHeader className="flex flex-row items-start justify-between gap-3">
+            <div className="flex flex-col gap-0.5">
+              <CardTitle className="text-base">Productos más vendidos por categoría</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {periodoLabel} · Click en una categoría para filtrar
+              </p>
+            </div>
+            <div className="inline-flex rounded-md border bg-background p-0.5 shrink-0">
+              {(['semana', 'mes', 'trimestre', 'anio'] as DashboardPeriodo[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriodo(p)}
+                  className={cn(
+                    'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+                    periodo === p
+                      ? 'bg-brand text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  style={periodo === p ? { backgroundColor: 'var(--brand)' } : undefined}
+                >
+                  {p === 'semana' ? '7d' : p === 'mes' ? '30d' : p === 'trimestre' ? '90d' : '1a'}
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
             <GraficoCategorias
@@ -597,6 +679,7 @@ export default function DashboardPage() {
               isLoading={loadingDash}
               isError={errorDash}
               onRetry={() => refetchDash()}
+              periodo={periodo}
             />
           </CardContent>
         </Card>
@@ -605,7 +688,7 @@ export default function DashboardPage() {
         <Card className="rounded-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Top vendedores</CardTitle>
-            <p className="text-xs text-muted-foreground">Por monto total — último mes</p>
+            <p className="text-xs text-muted-foreground">Por monto total — {periodoLabel.toLowerCase()}</p>
           </CardHeader>
           <CardContent>
             <CardVendedores

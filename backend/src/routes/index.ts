@@ -7,6 +7,7 @@ import clientesRoutes   from './clientes.routes'
 import ventasRoutes     from './ventas.routes'
 import reportesRoutes   from './reportes.routes'
 import backupRoutes     from './backup.routes'
+import adminRoutes      from './admin.routes'
 
 export const router = Router()
 
@@ -18,3 +19,4 @@ router.use('/clientes',        clientesRoutes)
 router.use('/ventas',          ventasRoutes)
 router.use('/reportes/backup', backupRoutes)
 router.use('/reportes',        reportesRoutes)
+router.use('/admin',           adminRoutes)

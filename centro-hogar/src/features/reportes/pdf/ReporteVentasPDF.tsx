@@ -1,7 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { LogoPDF } from './LogoPDF'
-import type { Venta } from '@/types/app.types'
+import type { ResumenCompleto } from '@/features/reportes/services/reportesService'
 
 const BRAND = '#E97118'
 const BRAND_DARK = '#B54612'
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   statBox: {
     flex: 1,
@@ -76,6 +76,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     color: '#111827',
   },
+  sectionTitle: {
+    fontSize: 11,
+    fontFamily: 'Helvetica-Bold',
+    color: '#111827',
+    marginBottom: 6,
+    marginTop: 6,
+  },
   tableHeader: {
     flexDirection: 'row',
     backgroundColor: '#f3f4f6',
@@ -92,7 +99,7 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
@@ -101,11 +108,12 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#374151',
   },
-  colNum: { width: 40 },
-  colFecha: { width: 70 },
-  colCliente: { flex: 1 },
-  colMetodo: { width: 80 },
-  colTotal: { width: 80, textAlign: 'right' },
+  rank: { width: 22 },
+  flex1: { flex: 1 },
+  numCol: { width: 70, textAlign: 'right' },
+  midCol: { width: 90, textAlign: 'right' },
+  empty: { padding: 12, alignItems: 'center' },
+  emptyText: { color: '#9ca3af', fontSize: 9 },
   footer: {
     position: 'absolute',
     bottom: 24,
@@ -126,22 +134,18 @@ const styles = StyleSheet.create({
 const METODO_LABEL: Record<string, string> = {
   efectivo: 'Efectivo',
   tarjeta: 'Tarjeta',
-  transferencia: 'Transf.',
+  transferencia: 'Transferencia',
 }
 
 interface ReporteVentasPDFProps {
-  ventas: Venta[]
+  resumen:    ResumenCompleto
   fechaDesde: string
   fechaHasta: string
-  stats: {
-    totalVentas: number
-    montoTotal: number
-    ticketPromedio: number
-  }
 }
 
-export function ReporteVentasPDF({ ventas, fechaDesde, fechaHasta, stats }: ReporteVentasPDFProps) {
+export function ReporteVentasPDF({ resumen, fechaDesde, fechaHasta }: ReporteVentasPDFProps) {
   const generadoEn = formatDateTime(new Date().toISOString())
+  const { resumen: r, por_metodo, por_vendedor, productos_top, ventas_por_dia } = resumen
 
   return (
     <Document>
@@ -166,59 +170,93 @@ export function ReporteVentasPDF({ ventas, fechaDesde, fechaHasta, stats }: Repo
 
         <View style={styles.divider} />
 
-        {/* Stats */}
+        {/* KPIs */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>TOTAL VENTAS</Text>
-            <Text style={styles.statValue}>{stats.totalVentas}</Text>
+            <Text style={styles.statValue}>{r.total_ventas}</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>MONTO TOTAL</Text>
-            <Text style={styles.statValue}>{formatCurrency(stats.montoTotal)}</Text>
+            <Text style={styles.statValue}>{formatCurrency(r.ingreso_total)}</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>TICKET PROMEDIO</Text>
-            <Text style={styles.statValue}>{formatCurrency(stats.ticketPromedio)}</Text>
+            <Text style={styles.statValue}>{formatCurrency(r.ticket_promedio)}</Text>
           </View>
         </View>
 
-        {/* Table header */}
-        <View style={styles.tableHeader}>
-          <Text style={[styles.tableHeaderText, styles.colNum]}>#</Text>
-          <Text style={[styles.tableHeaderText, styles.colFecha]}>Fecha</Text>
-          <Text style={[styles.tableHeaderText, styles.colCliente]}>Cliente</Text>
-          <Text style={[styles.tableHeaderText, styles.colMetodo]}>Método</Text>
-          <Text style={[styles.tableHeaderText, styles.colTotal]}>Total</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>DESCUENTOS</Text>
+            <Text style={styles.statValue}>{formatCurrency(r.total_descuentos)}</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>INTERESES</Text>
+            <Text style={styles.statValue}>{formatCurrency(r.total_intereses)}</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={styles.statLabel}>DÍAS CON VENTAS</Text>
+            <Text style={styles.statValue}>{ventas_por_dia.length}</Text>
+          </View>
         </View>
 
-        {/* Rows */}
-        {ventas.map((v) => (
-          <View key={v.id} style={styles.tableRow}>
-            <Text style={[styles.tableRowText, styles.colNum]}>
-              {String(v.numero_venta).padStart(4, '0')}
+        {/* Por método de pago */}
+        <Text style={styles.sectionTitle}>Por método de pago</Text>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableHeaderText, styles.flex1]}>Método</Text>
+          <Text style={[styles.tableHeaderText, styles.numCol]}>Ventas</Text>
+          <Text style={[styles.tableHeaderText, styles.midCol]}>Total</Text>
+        </View>
+        {por_metodo.length === 0 ? (
+          <View style={styles.empty}><Text style={styles.emptyText}>Sin datos en el período.</Text></View>
+        ) : por_metodo.map((m) => (
+          <View key={m.metodo_pago} style={styles.tableRow}>
+            <Text style={[styles.tableRowText, styles.flex1]}>
+              {METODO_LABEL[m.metodo_pago.toLowerCase()] ?? m.metodo_pago}
             </Text>
-            <Text style={[styles.tableRowText, styles.colFecha]}>
-              {formatDate(v.created_at)}
-            </Text>
-            <Text style={[styles.tableRowText, styles.colCliente]}>
-              {v.cliente ? `${v.cliente.apellido}, ${v.cliente.nombre}` : '—'}
-            </Text>
-            <Text style={[styles.tableRowText, styles.colMetodo]}>
-              {METODO_LABEL[v.metodo_pago] ?? v.metodo_pago}
-            </Text>
-            <Text style={[styles.tableRowText, styles.colTotal]}>
-              {formatCurrency(v.total_final)}
-            </Text>
+            <Text style={[styles.tableRowText, styles.numCol]}>{m.cantidad}</Text>
+            <Text style={[styles.tableRowText, styles.midCol]}>{formatCurrency(m.total)}</Text>
           </View>
         ))}
 
-        {ventas.length === 0 && (
-          <View style={{ padding: 16, alignItems: 'center' }}>
-            <Text style={{ color: '#9ca3af', fontSize: 9 }}>
-              No hay ventas en el período seleccionado.
-            </Text>
+        {/* Por vendedor */}
+        <Text style={styles.sectionTitle}>Ventas por vendedor</Text>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableHeaderText, styles.rank]}>#</Text>
+          <Text style={[styles.tableHeaderText, styles.flex1]}>Vendedor</Text>
+          <Text style={[styles.tableHeaderText, styles.numCol]}>Ventas</Text>
+          <Text style={[styles.tableHeaderText, styles.midCol]}>Monto</Text>
+        </View>
+        {por_vendedor.length === 0 ? (
+          <View style={styles.empty}><Text style={styles.emptyText}>Sin datos en el período.</Text></View>
+        ) : por_vendedor.map((v, i) => (
+          <View key={v.id} style={styles.tableRow}>
+            <Text style={[styles.tableRowText, styles.rank]}>{i + 1}</Text>
+            <Text style={[styles.tableRowText, styles.flex1]}>{v.vendedor}</Text>
+            <Text style={[styles.tableRowText, styles.numCol]}>{v.total_ventas}</Text>
+            <Text style={[styles.tableRowText, styles.midCol]}>{formatCurrency(v.monto_total)}</Text>
           </View>
-        )}
+        ))}
+
+        {/* Top productos */}
+        <Text style={styles.sectionTitle}>Productos más vendidos</Text>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableHeaderText, styles.rank]}>#</Text>
+          <Text style={[styles.tableHeaderText, styles.flex1]}>Producto</Text>
+          <Text style={[styles.tableHeaderText, styles.numCol]}>Unidades</Text>
+          <Text style={[styles.tableHeaderText, styles.midCol]}>Ingreso</Text>
+        </View>
+        {productos_top.length === 0 ? (
+          <View style={styles.empty}><Text style={styles.emptyText}>Sin datos en el período.</Text></View>
+        ) : productos_top.map((p, i) => (
+          <View key={p.id} style={styles.tableRow}>
+            <Text style={[styles.tableRowText, styles.rank]}>{i + 1}</Text>
+            <Text style={[styles.tableRowText, styles.flex1]}>{p.nombre}</Text>
+            <Text style={[styles.tableRowText, styles.numCol]}>{p.unidades_vendidas}</Text>
+            <Text style={[styles.tableRowText, styles.midCol]}>{formatCurrency(p.ingreso_total)}</Text>
+          </View>
+        ))}
 
         {/* Footer */}
         <View style={styles.footer} fixed>

@@ -2,7 +2,7 @@ import type { Request, Response } from 'express'
 import JSZip from 'jszip'
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
-import { getExportData } from '../services/export-data.service'
+import { getExportData, type ExportTable } from '../services/export-data.service'
 
 function escapeCell(val: unknown): string {
   if (val === null || val === undefined) return ''
@@ -39,6 +39,44 @@ function getColWidths(rows: Record<string, unknown>[]): XLSX.ColInfo[] {
   })
 }
 
+/**
+ * Genera un workbook XLSX con todas las hojas dadas. Cada hoja tiene anchos
+ * de columna automáticos, primera fila bold y filtros congelados.
+ */
+export function buildWorkbook(tables: ExportTable[]): Buffer {
+  const workbook = XLSX.utils.book_new()
+
+  for (const table of tables) {
+    const rows = table.rows.length > 0 ? table.rows : []
+    const worksheet = XLSX.utils.json_to_sheet(rows)
+
+    if (rows.length === 0) {
+      XLSX.utils.sheet_add_aoa(worksheet, [['Sin datos']], { origin: 'A1' })
+      XLSX.utils.book_append_sheet(workbook, worksheet, table.sheetName)
+      continue
+    }
+
+    worksheet['!cols'] = getColWidths(rows)
+    worksheet['!freeze'] = { xSplit: 0, ySplit: 1 }
+
+    const headers = Object.keys(rows[0])
+    headers.forEach((_, colIdx) => {
+      const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx })
+      if (worksheet[cellRef]) {
+        worksheet[cellRef].s = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: 'F0F0F0' } },
+          alignment: { horizontal: 'center' },
+        }
+      }
+    })
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, table.sheetName)
+  }
+
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', bookSST: false }) as Buffer
+}
+
 export const backupController = {
   async csv(_req: Request, res: Response): Promise<void> {
     const tables = await getExportData()
@@ -60,47 +98,8 @@ export const backupController = {
 
   async excel(_req: Request, res: Response): Promise<void> {
     const tables = await getExportData()
-    const date = format(new Date(), 'yyyy-MM-dd')
-
-    const workbook = XLSX.utils.book_new()
-
-    for (const table of tables) {
-      const rows = table.rows.length > 0 ? table.rows : []
-
-      // Construir worksheet desde JSON
-      const worksheet = XLSX.utils.json_to_sheet(rows)
-
-      // Si no hay datos, crear hoja vacía con mensaje
-      if (rows.length === 0) {
-        XLSX.utils.sheet_add_aoa(worksheet, [['Sin datos']], { origin: 'A1' })
-        XLSX.utils.book_append_sheet(workbook, worksheet, table.sheetName)
-        continue
-      }
-
-      // Anchos de columna automáticos
-      worksheet['!cols'] = getColWidths(rows)
-
-      // Congelar la primera fila (encabezados)
-      worksheet['!freeze'] = { xSplit: 0, ySplit: 1 }
-
-      // Aplicar estilo bold a la fila de encabezados
-      const headers = Object.keys(rows[0])
-      headers.forEach((_, colIdx) => {
-        const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx })
-        if (worksheet[cellRef]) {
-          worksheet[cellRef].s = {
-            font: { bold: true },
-            fill: { fgColor: { rgb: 'F0F0F0' } },
-            alignment: { horizontal: 'center' },
-          }
-        }
-      })
-
-      XLSX.utils.book_append_sheet(workbook, worksheet, table.sheetName)
-    }
-
-    // Escribir con estilos habilitados
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', bookSST: false })
+    const date   = format(new Date(), 'yyyy-MM-dd')
+    const buffer = buildWorkbook(tables)
 
     res.setHeader(
       'Content-Type',

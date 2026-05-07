@@ -169,10 +169,11 @@ export const reportesService = {
   // ── Dashboard ─────────────────────────────────────────────────────────────
 
   /** Top N categorías por unidades vendidas en el período. Agrupa el resto en "Otros". */
-  async categoriasPorVentas(fechaDesde: string, fechaHasta: string, topN = 5): Promise<{ categoria: string; unidades: number }[]> {
+  async categoriasPorVentas(fechaDesde: string, fechaHasta: string, topN = 5): Promise<{ categoria: string; unidades: number; ingreso: number }[]> {
     const [rows] = await pool.execute<any[]>(
       `SELECT COALESCE(c.nombre, 'Sin categoría') AS categoria,
-              SUM(vi.cantidad) AS unidades
+              SUM(vi.cantidad) AS unidades,
+              SUM(vi.subtotal) AS ingreso
        FROM venta_items vi
        JOIN productos p  ON p.id = vi.producto_id
        LEFT JOIN categorias c ON c.id = p.categoria_id
@@ -185,11 +186,13 @@ export const reportesService = {
     const parsed = rows.map((r: any) => ({
       categoria: String(r.categoria),
       unidades:  Number(r.unidades),
+      ingreso:   Number(r.ingreso),
     }))
     if (parsed.length <= topN) return parsed
     const top    = parsed.slice(0, topN)
-    const otros  = parsed.slice(topN).reduce((acc, r) => acc + r.unidades, 0)
-    return [...top, { categoria: 'Otros', unidades: otros }]
+    const otrosUnidades = parsed.slice(topN).reduce((acc, r) => acc + r.unidades, 0)
+    const otrosIngreso  = parsed.slice(topN).reduce((acc, r) => acc + r.ingreso, 0)
+    return [...top, { categoria: 'Otros', unidades: otrosUnidades, ingreso: otrosIngreso }]
   },
 
   /**
@@ -197,7 +200,7 @@ export const reportesService = {
    * Productos menores de cada categoría se agrupan como "Otros".
    */
   async productosPorCategoria(categorias: string[], fechaDesde: string, fechaHasta: string, topM = 3): Promise<
-    { categoria: string; producto: string; unidades: number }[]
+    { categoria: string; producto: string; unidades: number; ingreso: number }[]
   > {
     if (categorias.length === 0) return []
     // Excluimos "Otros" y "Sin categoría" del join — son grupos sintéticos
@@ -208,7 +211,8 @@ export const reportesService = {
     const [rows] = await pool.execute<any[]>(
       `SELECT COALESCE(c.nombre, 'Sin categoría') AS categoria,
               p.nombre AS producto,
-              SUM(vi.cantidad) AS unidades
+              SUM(vi.cantidad) AS unidades,
+              SUM(vi.subtotal) AS ingreso
        FROM venta_items vi
        JOIN productos p  ON p.id = vi.producto_id
        LEFT JOIN categorias c ON c.id = p.categoria_id
@@ -221,20 +225,21 @@ export const reportesService = {
     )
 
     // Agrupar por categoría y tomar top M + Otros
-    const byCat: Record<string, { producto: string; unidades: number }[]> = {}
+    const byCat: Record<string, { producto: string; unidades: number; ingreso: number }[]> = {}
     for (const r of rows as any[]) {
       const cat = String(r.categoria)
       if (!byCat[cat]) byCat[cat] = []
-      byCat[cat].push({ producto: String(r.producto), unidades: Number(r.unidades) })
+      byCat[cat].push({ producto: String(r.producto), unidades: Number(r.unidades), ingreso: Number(r.ingreso) })
     }
 
-    const result: { categoria: string; producto: string; unidades: number }[] = []
+    const result: { categoria: string; producto: string; unidades: number; ingreso: number }[] = []
     for (const cat of realCats) {
       const prods = byCat[cat] ?? []
       const top   = prods.slice(0, topM)
-      const rest  = prods.slice(topM).reduce((acc, p) => acc + p.unidades, 0)
+      const restU = prods.slice(topM).reduce((acc, p) => acc + p.unidades, 0)
+      const restI = prods.slice(topM).reduce((acc, p) => acc + p.ingreso, 0)
       for (const p of top) result.push({ categoria: cat, ...p })
-      if (rest > 0) result.push({ categoria: cat, producto: 'Otros', unidades: rest })
+      if (restU > 0) result.push({ categoria: cat, producto: 'Otros', unidades: restU, ingreso: restI })
     }
     return result
   },
@@ -262,17 +267,21 @@ export const reportesService = {
     }))
   },
 
-  /** Datos del dashboard en una sola llamada (último mes). */
-  async dashboardData() {
+  /** Datos del dashboard en una sola llamada. Período configurable. */
+  async dashboardData(periodo: 'semana' | 'mes' | 'trimestre' | 'anio' = 'mes') {
     const TOP_CATS  = 5
     const TOP_PRODS = 3
 
-    // Rango: últimos 30 días hasta hoy (inclusive) en UTC-3
+    const dias = periodo === 'semana' ? 7
+               : periodo === 'mes'    ? 30
+               : periodo === 'trimestre' ? 90
+               : 365
+
     const ahora      = new Date()
     const fechaHasta = ahora.toISOString().slice(0, 10) + ' 23:59:59'
-    const hace30     = new Date(ahora)
-    hace30.setDate(hace30.getDate() - 29)
-    const fechaDesde = hace30.toISOString().slice(0, 10) + ' 00:00:00'
+    const desde      = new Date(ahora)
+    desde.setDate(desde.getDate() - (dias - 1))
+    const fechaDesde = desde.toISOString().slice(0, 10) + ' 00:00:00'
 
     const [categoriasRaw, vendedores] = await Promise.all([
       this.categoriasPorVentas(fechaDesde, fechaHasta, TOP_CATS),
@@ -281,6 +290,8 @@ export const reportesService = {
     const catNames  = categoriasRaw.map((c) => c.categoria)
     const productos = await this.productosPorCategoria(catNames, fechaDesde, fechaHasta, TOP_PRODS)
     return {
+      periodo,
+      dias,
       categorias_top:          categoriasRaw,
       productos_por_categoria: productos,
       vendedores_top:          vendedores,

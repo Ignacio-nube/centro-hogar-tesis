@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express'
 import { reportesService } from '../services/reportes.service'
+import { getReportePeriodoData } from '../services/reporte-periodo.service'
+import { buildWorkbook } from './backup.controller'
 import * as r from '../utils/response'
 
 function getDateRange(req: Request): { fechaDesde: string; fechaHasta: string } {
@@ -17,8 +19,11 @@ function getDateRange(req: Request): { fechaDesde: string; fechaHasta: string } 
 
 export const reportesController = {
 
-  async dashboard(_req: Request, res: Response): Promise<void> {
-    const data = await reportesService.dashboardData()
+  async dashboard(req: Request, res: Response): Promise<void> {
+    const periodoQ = String(req.query['periodo'] ?? 'mes')
+    const periodo: 'semana' | 'mes' | 'trimestre' | 'anio' =
+      (['semana', 'mes', 'trimestre', 'anio'] as const).find((p) => p === periodoQ) ?? 'mes'
+    const data = await reportesService.dashboardData(periodo)
     r.ok(res, data)
   },
 
@@ -51,6 +56,24 @@ export const reportesController = {
   async clientesTop(_req: Request, res: Response): Promise<void> {
     const clientes = await reportesService.clientesTopCompras(10)
     r.ok(res, clientes)
+  },
+
+  async excelPeriodo(req: Request, res: Response): Promise<void> {
+    const { fechaDesde, fechaHasta } = getDateRange(req)
+    const tables = await getReportePeriodoData(fechaDesde, fechaHasta)
+    const buffer = buildWorkbook(tables)
+
+    const desdeStr = fechaDesde.slice(0, 10)
+    const hastaStr = fechaHasta.slice(0, 10)
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="reporte-ventas-${desdeStr}-${hastaStr}.xlsx"`
+    )
+    res.send(buffer)
   },
 
 }

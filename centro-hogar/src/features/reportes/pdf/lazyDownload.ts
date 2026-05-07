@@ -1,10 +1,5 @@
 import type { Venta, CartItem, Producto } from '@/types/app.types'
-
-interface ReporteVentasStats {
-  totalVentas: number
-  montoTotal: number
-  ticketPromedio: number
-}
+import type { ResumenCompleto } from '@/features/reportes/services/reportesService'
 
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
@@ -34,10 +29,9 @@ export async function downloadTicketPDF(venta: Venta, items: CartItem[]): Promis
 }
 
 export async function downloadReporteVentasPDF(
-  ventas: Venta[],
+  resumen: ResumenCompleto,
   fechaDesde: string,
   fechaHasta: string,
-  stats: ReporteVentasStats,
 ): Promise<void> {
   const [{ pdf }, { ReporteVentasPDF }, React] = await Promise.all([
     import('@react-pdf/renderer'),
@@ -45,7 +39,7 @@ export async function downloadReporteVentasPDF(
     import('react'),
   ])
   const element = React.createElement(ReporteVentasPDF, {
-    ventas, fechaDesde, fechaHasta, stats,
+    resumen, fechaDesde, fechaHasta,
   }) as Parameters<typeof pdf>[0]
   const blob = await pdf(element).toBlob()
   triggerDownload(blob, `reporte-ventas-${fechaDesde}-${fechaHasta}.pdf`)

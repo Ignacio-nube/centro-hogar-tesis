@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Download, Sheet } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Sheet, AlertTriangle, Trash } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -10,6 +10,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -22,7 +29,9 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { DataTable, type Column } from '@/components/common/DataTable'
 import { productosService } from '@/features/productos/services/productosService'
 import { downloadBackup, downloadBackupExcel } from '@/features/backup/backupService'
+import { adminService } from '@/features/admin/adminService'
 import { QueryErrorState } from '@/components/ui/query-error-state'
+import { formatCurrency } from '@/lib/utils'
 import type { Categoria } from '@/types/app.types'
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
@@ -230,6 +239,177 @@ function CategoriasTab() {
   )
 }
 
+// ─── PurgeOldSalesSection ────────────────────────────────────────────────────
+// Permite borrar ventas antiguas (default: > 2 años). venta_items se borran en
+// cascada por la FK; movimientos_stock se preservan como historial.
+
+function PurgeOldSalesSection() {
+  const qc = useQueryClient()
+  const [years, setYears] = useState<number>(2)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmText, setConfirmText] = useState('')
+
+  const previewQuery = useQuery({
+    queryKey: ['admin-purge-preview', years],
+    queryFn: () => adminService.previewPurgeOldSales(years),
+    staleTime: 1000 * 30,
+  })
+
+  const purgeMutation = useMutation({
+    mutationFn: (y: number) => adminService.purgeOldSales(y),
+    onSuccess: (data) => {
+      toast.success(`${data.deleted.toLocaleString('es-AR')} ventas eliminadas`)
+      // Invalidar caches relacionadas con ventas / dashboard
+      qc.invalidateQueries({ queryKey: ['ventas'] })
+      qc.invalidateQueries({ queryKey: ['stats-hoy'] })
+      qc.invalidateQueries({ queryKey: ['ventas-por-dia'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-data'] })
+      qc.invalidateQueries({ queryKey: ['admin-purge-preview'] })
+      setConfirmOpen(false)
+      setConfirmText('')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Error al eliminar ventas')
+    },
+  })
+
+  const preview     = previewQuery.data
+  const isReady     = !!preview && preview.count > 0
+  const fechaCorte  = preview?.fecha_corte ? preview.fecha_corte.slice(0, 10) : '—'
+  const fechaAntigua = preview?.fecha_mas_antigua ? preview.fecha_mas_antigua.slice(0, 10) : '—'
+
+  const canConfirm = confirmText.trim().toUpperCase() === 'ELIMINAR' && !purgeMutation.isPending
+
+  return (
+    <Card className="border-destructive/30">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertTriangle className="size-4 text-destructive" />
+          Limpieza de ventas antiguas
+        </CardTitle>
+        <CardDescription>
+          Eliminá definitivamente las ventas más antiguas que el umbral elegido.
+          Las líneas de cada venta se borran en cascada; el historial de movimientos
+          de stock <span className="font-medium">no se toca</span>. Esta acción no se puede deshacer.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="purge-years">Antigüedad mínima</Label>
+            <Select value={String(years)} onValueChange={(v) => setYears(Number(v))}>
+              <SelectTrigger id="purge-years" className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2">Más de 2 años</SelectItem>
+                <SelectItem value="3">Más de 3 años</SelectItem>
+                <SelectItem value="5">Más de 5 años</SelectItem>
+                <SelectItem value="10">Más de 10 años</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => previewQuery.refetch()}
+            disabled={previewQuery.isFetching}
+          >
+            {previewQuery.isFetching ? 'Calculando...' : 'Actualizar vista previa'}
+          </Button>
+        </div>
+
+        {previewQuery.isError ? (
+          <p className="text-sm text-destructive">
+            {previewQuery.error instanceof Error ? previewQuery.error.message : 'Error al cargar la vista previa'}
+          </p>
+        ) : preview ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-md border bg-muted/30 p-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Ventas a eliminar</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {preview.count.toLocaleString('es-AR')}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Monto involucrado</p>
+              <p className="text-2xl font-bold tabular-nums">{formatCurrency(preview.monto_total)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Rango</p>
+              <p className="text-sm font-medium">
+                {fechaAntigua} <span className="text-muted-foreground">a</span> {fechaCorte}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="destructive"
+            disabled={!isReady}
+            onClick={() => { setConfirmText(''); setConfirmOpen(true) }}
+          >
+            <Trash data-icon="inline-start" />
+            Eliminar {preview?.count?.toLocaleString('es-AR') ?? '0'} ventas
+          </Button>
+          {!isReady && preview && (
+            <span className="text-xs text-muted-foreground">No hay ventas anteriores a esa fecha.</span>
+          )}
+        </div>
+      </CardContent>
+
+      {/* Diálogo de confirmación con doble validación: hay que escribir "ELIMINAR" */}
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(v) => { if (!purgeMutation.isPending) { setConfirmOpen(v); if (!v) setConfirmText('') } }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="size-5" />
+              Confirmar eliminación
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 text-sm">
+            <p>
+              Vas a eliminar <span className="font-bold">{preview?.count.toLocaleString('es-AR')} ventas</span>
+              {' '}anteriores al <span className="font-bold">{fechaCorte}</span>
+              {' '}por un total de <span className="font-bold">{formatCurrency(preview?.monto_total ?? 0)}</span>.
+            </p>
+            <p className="text-muted-foreground">
+              Esta operación no se puede deshacer. Asegurate de tener una copia de seguridad.
+            </p>
+            <div className="flex flex-col gap-1.5 pt-2">
+              <Label htmlFor="confirm-text">
+                Para continuar, escribí <span className="font-mono font-bold">ELIMINAR</span>
+              </Label>
+              <Input
+                id="confirm-text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="ELIMINAR"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={purgeMutation.isPending}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!canConfirm}
+              onClick={() => purgeMutation.mutate(years)}
+            >
+              {purgeMutation.isPending ? 'Eliminando...' : 'Eliminar definitivamente'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function AjustesPage() {
@@ -306,6 +486,8 @@ export default function AjustesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <PurgeOldSalesSection />
     </div>
   )
 }

@@ -52,15 +52,19 @@ export interface ResumenCompleto {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
+export type DashboardPeriodo = 'semana' | 'mes' | 'trimestre' | 'anio'
+
 export interface CategoriaTop {
   categoria: string
   unidades: number
+  ingreso: number
 }
 
 export interface ProductoPorCategoria {
   categoria: string
   producto: string
   unidades: number
+  ingreso: number
 }
 
 export interface VendedorTop {
@@ -70,6 +74,8 @@ export interface VendedorTop {
 }
 
 export interface DashboardData {
+  periodo:                 DashboardPeriodo
+  dias:                    number
   categorias_top:          CategoriaTop[]
   productos_por_categoria: ProductoPorCategoria[]
   vendedores_top:          VendedorTop[]
@@ -94,7 +100,7 @@ export const reportesService = {
     }>>('/reportes/stock')
   },
 
-  async getDashboardData(): Promise<DashboardData> {
-    return api.get<DashboardData>('/reportes/dashboard')
+  async getDashboardData(periodo: DashboardPeriodo = 'mes'): Promise<DashboardData> {
+    return api.get<DashboardData>(`/reportes/dashboard?periodo=${periodo}`)
   },
 }

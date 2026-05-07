@@ -20,3 +20,10 @@ export async function downloadBackupExcel(): Promise<void> {
   const { blob, filename } = await api.download('/reportes/backup/excel')
   triggerDownload(blob, filename ?? `centro-hogar-backup-${new Date().toISOString().slice(0, 10)}.xlsx`)
 }
+
+export async function downloadReportePeriodoExcel(fechaDesde: string, fechaHasta: string): Promise<void> {
+  const { blob, filename } = await api.download(
+    `/reportes/excel?fechaDesde=${fechaDesde}&fechaHasta=${fechaHasta}`,
+  )
+  triggerDownload(blob, filename ?? `reporte-ventas-${fechaDesde}-${fechaHasta}.xlsx`)
+}

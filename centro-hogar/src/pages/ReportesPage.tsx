@@ -15,7 +15,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { downloadReporteVentasPDF, downloadReporteStockPDF } from '@/features/reportes/pdf/lazyDownload'
 import { reportesService } from '@/features/reportes/services/reportesService'
 import { productosService } from '@/features/productos/services/productosService'
-import { downloadBackupExcel } from '@/features/backup/backupService'
+import { downloadReportePeriodoExcel } from '@/features/backup/backupService'
 import { formatCurrency } from '@/lib/utils'
 import {
   format, startOfMonth, startOfWeek, subDays, subMonths,
@@ -160,19 +160,12 @@ export default function ReportesPage() {
 
   const productos = productosData?.data ?? []
 
-  // Datos derivados para los PDFs (compatibilidad con ReporteVentasPDF)
-  const statsForPDF = {
-    totalVentas:  resumen?.resumen.total_ventas  ?? 0,
-    montoTotal:   resumen?.resumen.ingreso_total ?? 0,
-    ticketPromedio: resumen?.resumen.ticket_promedio ?? 0,
-  }
-
   const handleExcelExport = async () => {
     setIsDownloadingExcel(true)
     try {
-      await downloadBackupExcel()
-    } catch {
-      // el toast lo maneja el servicio
+      await downloadReportePeriodoExcel(fechaDesde, fechaHasta)
+    } catch (err) {
+      toast.error(`No se pudo generar el Excel: ${(err as Error).message}`)
     } finally {
       setIsDownloadingExcel(false)
     }
@@ -243,11 +236,12 @@ export default function ReportesPage() {
               </Button>
               <Button
                 variant="outline"
-                disabled={isDownloadingVentasPDF || isLoading}
+                disabled={isDownloadingVentasPDF || isLoading || !resumen}
                 onClick={async () => {
+                  if (!resumen) return
                   setIsDownloadingVentasPDF(true)
                   try {
-                    await downloadReporteVentasPDF([], fechaDesde, fechaHasta, statsForPDF)
+                    await downloadReporteVentasPDF(resumen, fechaDesde, fechaHasta)
                   } catch (err) {
                     toast.error(`No se pudo generar el reporte: ${(err as Error).message}`)
                   } finally {

@@ -16,5 +16,6 @@ router.get('/ventas',        ah(reportesController.resumenVentas))
 router.get('/productos-top', ah(reportesController.productosTop))
 router.get('/stock',         ah(reportesController.stockActual))
 router.get('/clientes-top',  ah(reportesController.clientesTop))
+router.get('/excel',         ah(reportesController.excelPeriodo))
 
 export default router
