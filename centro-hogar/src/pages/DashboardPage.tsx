@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 
 // ─── Paleta de colores para categorías ────────────────────────────────────────
 // Cada posición tiene: [base, shade1, shade2, shade3, shade4 (Otros)]
+// 12 paletas para soportar hasta 12 categorías distintas en el donut.
 const CAT_PALETTES = [
   ['#6366f1', '#818cf8', '#a5b4fc', '#c7d2fe', '#e0e7ff'], // indigo
   ['#f59e0b', '#fbbf24', '#fcd34d', '#fde68a', '#fef3c7'], // amber
@@ -36,6 +37,12 @@ const CAT_PALETTES = [
   ['#ef4444', '#f87171', '#fca5a5', '#fecaca', '#fee2e2'], // red
   ['#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe', '#ede9fe'], // violet
   ['#06b6d4', '#22d3ee', '#67e8f9', '#a5f3fc', '#cffafe'], // cyan
+  ['#ec4899', '#f472b6', '#f9a8d4', '#fbcfe8', '#fce7f3'], // pink
+  ['#14b8a6', '#2dd4bf', '#5eead4', '#99f6e4', '#ccfbf1'], // teal
+  ['#84cc16', '#a3e635', '#bef264', '#d9f99d', '#ecfccb'], // lime
+  ['#f43f5e', '#fb7185', '#fda4af', '#fecdd3', '#ffe4e6'], // rose
+  ['#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe'], // sky
+  ['#d946ef', '#e879f9', '#f0abfc', '#f5d0fe', '#fae8ff'], // fuchsia
 ]
 
 function getCatColor(catIndex: number, prodIndex: number): string {

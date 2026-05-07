@@ -269,7 +269,9 @@ export const reportesService = {
 
   /** Datos del dashboard en una sola llamada. Período configurable. */
   async dashboardData(periodo: 'semana' | 'mes' | 'trimestre' | 'anio' = 'mes') {
-    const TOP_CATS  = 5
+    // Tope alto: cubre el caso normal y deja margen si en el futuro se agregan
+    // muchas categorías. Las que excedan se agrupan como "Otros".
+    const TOP_CATS  = 12
     const TOP_PRODS = 3
 
     const dias = periodo === 'semana' ? 7
