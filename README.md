@@ -54,13 +54,11 @@ cd centro-hogar-tesis
 
 ### 2. Crear la base de datos
 
-Hay dos formas: con los scripts (recomendado, automático) o con phpMyAdmin (manual).
+Hay dos formas: con el script (recomendado) o con phpMyAdmin (manual).
 
-#### Opción A — Con los scripts de PowerShell (recomendado)
+#### Opción A — Con el script (recomendado)
 
-Los scripts en `scripts/` automatizan la creación y migración de la DB entre PCs.
-
-**Pre-requisito**: agregar `mysql.exe` y `mysqldump.exe` al PATH. Si usás XAMPP:
+**Pre-requisito**: agregar `mysql.exe` al PATH. Si usás XAMPP:
 
 ```powershell
 setx PATH "$env:PATH;C:\xampp\mysql\bin"
@@ -68,41 +66,23 @@ setx PATH "$env:PATH;C:\xampp\mysql\bin"
 
 Cerrá la terminal y abrí una nueva para que tome el cambio.
 
-**A.1) Con datos de prueba** — recomendado para tesis y desarrollo. Carga 22 usuarios, 150 clientes, 120 productos y ~64.000 ventas con distribución estacional realista. Tarda 5-15 min.
+Después corré el script único que crea la estructura y carga los datos de prueba (22 usuarios, 150 clientes, 120 productos, ~64.000 ventas):
 
 ```powershell
 cd scripts
-.\crear-base-vacia.ps1
-.\cargar-datos-de-prueba.ps1
+.\instalar-base-de-datos.ps1
 ```
 
-**A.2) Sin datos** — base vacía para empezar de cero. El admin inicial se crea automáticamente al arrancar el backend (paso 4) con los valores de `ADMIN_EMAIL` y `ADMIN_PASSWORD` del `.env`.
+Tarda 5-15 minutos en total. Si tu MySQL tiene credenciales:
 
 ```powershell
-cd scripts
-.\crear-base-vacia.ps1
+.\instalar-base-de-datos.ps1 -DbUser admin -DbPass "MiClave!2026"
 ```
 
-**A.3) Migrar desde otra PC con todos los datos reales** (no datos de prueba):
-
-En la PC origen (la que ya tiene la app funcionando):
+Si querés la base vacía (sin datos de prueba) para empezar de cero:
 
 ```powershell
-cd scripts
-.\exportar-base-completa.ps1
-```
-
-Eso genera `backups/centro_hogar_<fecha>_completo.sql`. Copialo a la PC destino y ahí:
-
-```powershell
-cd scripts
-.\importar-base-completa.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
-```
-
-Por defecto los scripts se conectan a `localhost:3306` con usuario `root` sin contraseña. Si tu MySQL tiene otras credenciales, pasá `-DbUser` y `-DbPass`:
-
-```powershell
-.\crear-base-vacia.ps1 -DbUser admin -DbPass "MiClave!2026"
+.\instalar-base-de-datos.ps1 -SoloEstructura
 ```
 
 > Más detalles en [`scripts/README.md`](scripts/README.md).
@@ -110,10 +90,12 @@ Por defecto los scripts se conectan a `localhost:3306` con usuario `root` sin co
 #### Opción B — Manual con phpMyAdmin
 
 1. Abrí phpMyAdmin (normalmente en `http://localhost/phpmyadmin`)
-2. Creá una nueva base de datos llamada **`centro_hogar`** con cotejamiento `utf8mb4_unicode_ci`
-3. Seleccioná la base `centro_hogar` y andá a la pestaña **Importar**
+2. Creá una base de datos llamada **`centro_hogar`** con cotejamiento `utf8mb4_unicode_ci`
+3. Seleccioná `centro_hogar` y andá a la pestaña **Importar**
 4. Importá `database.sql` (estructura)
-5. (Opcional) Importá `seed.sql` (datos de prueba — desde la consola conviene más usar `cargar-datos-de-prueba.ps1` porque phpMyAdmin suele timeout antes de terminar las 64k ventas)
+5. (Opcional) Importá `seed.sql` (datos de prueba)
+
+> phpMyAdmin suele dar timeout antes de terminar las 64k ventas del seed. Si te falla, usá la Opción A.
 
 ### 3. Configurar el backend
 

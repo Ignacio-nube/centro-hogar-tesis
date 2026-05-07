@@ -1,39 +1,54 @@
-# Scripts de base de datos — Centro Hogar
+# Scripts — Centro Hogar
 
-Scripts PowerShell para crear y mover la base `centro_hogar` entre PCs sin
-pasar por phpMyAdmin manualmente.
+Un único script para dejar la base de datos lista en una PC nueva.
 
-## Scripts disponibles
+## `instalar-base-de-datos.ps1`
 
-| Script | Para qué sirve |
-|--------|----------------|
-| `crear-base-vacia.ps1` | Crea la base `centro_hogar` con la **estructura sola** (tablas, vistas, triggers). Sin datos. |
-| `cargar-datos-de-prueba.ps1` | Ejecuta `seed.sql` y carga 22 usuarios, 150 clientes, 120 productos y ~64.000 ventas con distribución estacional realista. Tarda 5-15 min. |
-| `exportar-base-completa.ps1` | Genera un `.sql` con la **estructura + datos reales actuales** (mediante `mysqldump`). Útil para llevarse la base con todo a otra PC. |
-| `importar-base-completa.ps1` | Restaura un `.sql` exportado previamente (o cualquier dump compatible). |
+Hace los dos pasos en orden, sin que tengas que ejecutar nada más:
 
-## Requisitos previos
+1. Aplica `database.sql` → crea la base `centro_hogar` con todas las tablas,
+   vistas y triggers.
+2. Aplica `seed.sql` → carga 22 usuarios, 150 clientes, 120 productos y
+   ~64.000 ventas con distribución estacional realista.
 
-1. **MySQL/MariaDB instalado** (XAMPP, WAMP, MySQL Server).
-2. **`mysql.exe` y `mysqldump.exe` en el PATH**. Si usás XAMPP:
-   ```powershell
-   setx PATH "$env:PATH;C:\xampp\mysql\bin"
-   ```
-   Cerrá la terminal y abrí una nueva.
+Tarda 5-15 minutos en total (el seed es lo lento).
 
-## Casos de uso
+### Pre-requisito
 
-### A) PC nueva con datos de prueba (recomendado para tesis/desarrollo)
+`mysql.exe` debe estar en el PATH. Si usás XAMPP:
 
-Crea la estructura y carga los 64k registros del `seed.sql`:
+```powershell
+setx PATH "$env:PATH;C:\xampp\mysql\bin"
+```
+
+Cerrá la terminal y abrí una nueva para que tome el cambio.
+
+### Uso
 
 ```powershell
 cd scripts
-.\crear-base-vacia.ps1
-.\cargar-datos-de-prueba.ps1
+.\instalar-base-de-datos.ps1
 ```
 
-Te quedan los 3 usuarios de prueba (todos con password `test123`):
+Por defecto se conecta a `localhost:3306` con usuario `root` sin contraseña.
+Si tu MySQL tiene otras credenciales:
+
+```powershell
+.\instalar-base-de-datos.ps1 -DbUser admin -DbPass "MiClave!2026"
+```
+
+### Si querés la base vacía (sin datos de prueba)
+
+```powershell
+.\instalar-base-de-datos.ps1 -SoloEstructura
+```
+
+En ese caso, al arrancar el backend se crea automáticamente el usuario admin
+con las variables `ADMIN_EMAIL` / `ADMIN_PASSWORD` del `.env`.
+
+### Credenciales (cuando cargás datos de prueba)
+
+Todos los usuarios tienen password `test123`.
 
 | Email | Rol |
 |-------|-----|
@@ -41,78 +56,31 @@ Te quedan los 3 usuarios de prueba (todos con password `test123`):
 | `elena.correa@centrohogar.com` | Encargado de stock |
 | `lucas.garcia@centrohogar.com` | Vendedor |
 
-### B) PC nueva sin datos (empezar de cero)
-
-Solo crea la estructura. El admin inicial se genera automáticamente al
-arrancar el backend (toma `ADMIN_EMAIL` y `ADMIN_PASSWORD` del `.env`):
-
-```powershell
-cd scripts
-.\crear-base-vacia.ps1
-```
-
-### C) Migrar la base actual con todos los datos a otra PC
-
-En la PC origen:
-
-```powershell
-cd scripts
-.\exportar-base-completa.ps1
-```
-
-Esto genera `backups/centro_hogar_<fecha>_completo.sql` (estructura + datos
-reales + triggers + vistas). Copiá ese archivo a la PC destino.
-
-En la PC destino:
-
-```powershell
-cd scripts
-.\importar-base-completa.ps1 -InFile "..\backups\centro_hogar_20260101_120000_completo.sql"
-```
-
-> El dump incluye `CREATE DATABASE IF NOT EXISTS centro_hogar`, así que
-> no hace falta crear la base a mano antes.
-
-### D) Backup periódico
-
-```powershell
-.\exportar-base-completa.ps1 -OutFile "D:\backups\ch_$(Get-Date -Format yyyyMMdd).sql"
-```
-
-### E) Solo estructura (para diff/revisión de schema)
-
-```powershell
-.\exportar-base-completa.ps1 -SoloEstructura
-```
-
-## Argumentos comunes
-
-Todos los scripts aceptan estos parámetros (con defaults útiles para XAMPP):
+### Argumentos disponibles
 
 | Parámetro | Default | Descripción |
 |-----------|---------|-------------|
 | `-DbHost` | `localhost` | Host del servidor MySQL |
 | `-DbPort` | `3306` | Puerto |
 | `-DbUser` | `root` | Usuario |
-| `-DbPass` | (vacío) | Contraseña — pasá entre comillas si tiene caracteres especiales |
+| `-DbPass` | (vacío) | Contraseña |
 | `-DbName` | `centro_hogar` | Nombre de la base |
+| `-SoloEstructura` | (off) | Salta el seed y deja la base vacía |
 
-Ejemplo con credenciales:
+## Backups
+
+Para hacer backups, andá a la app: **Ajustes → Copia de seguridad** te
+descarga todo en CSV (ZIP) o Excel. Es lo más simple. Si necesitás un dump
+SQL nativo (por ejemplo, para migrar a otro servidor), usá `mysqldump`
+directamente:
 
 ```powershell
-.\crear-base-vacia.ps1 -DbUser admin -DbPass "MiClave!2026"
+mysqldump -u root --routines --triggers --single-transaction `
+  --default-character-set=utf8mb4 centro_hogar > backup.sql
 ```
 
-## Solución de problemas
+Y para restaurarlo:
 
-- **`mysql.exe no esta en el PATH`**: agregá la carpeta `bin` de tu MySQL al
-  PATH del sistema y reabrí la terminal.
-- **`Access denied for user 'root'@'localhost'`**: pasá `-DbUser` y `-DbPass`
-  con tus credenciales reales.
-- **El dump pesa mucho**: con 64k+ ventas el `.sql` puede pasar 100 MB. Es
-  esperable; para reducir tamaño usá `-SoloEstructura`.
-- **`cargar-datos-de-prueba.ps1` falla con "Table doesn't exist"**: corré
-  primero `.\crear-base-vacia.ps1` para tener la estructura.
-- **Errores de charset / acentos raros**: los scripts usan `utf8mb4` siempre.
-  Si ves caracteres incorrectos, asegurate de que tu MySQL esté en
-  `utf8mb4_unicode_ci`.
+```powershell
+mysql -u root centro_hogar < backup.sql
+```
