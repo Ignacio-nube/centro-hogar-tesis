@@ -46,6 +46,14 @@ Si tu MySQL tiene otras credenciales:
 En ese caso, al arrancar el backend se crea automáticamente el usuario admin
 con las variables `ADMIN_EMAIL` / `ADMIN_PASSWORD` del `.env`.
 
+### Acentos / "signos de pregunta"
+
+El script fuerza UTF-8 al cargar el SQL, así que los nombres con acento
+(`María`, `López`, `Córdoba`) entran bien. Si **ya** tenías la base cargada con
+una versión vieja del script y ves `?` en los nombres, esas filas no se arreglan
+solas: hay que volver a correr el script sobre una base limpia para regenerar los
+datos.
+
 ### Credenciales (cuando cargás datos de prueba)
 
 Todos los usuarios tienen password `test123`.

@@ -61,7 +61,8 @@ export function ClienteDialog({ open, onOpenChange, cliente, onSuccess }: Client
       toast.success(isEditing ? 'Cliente actualizado' : 'Cliente creado')
       onSuccess()
     },
-    onError: () => toast.error('Ocurrió un error al guardar el cliente'),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : 'Ocurrió un error al guardar el cliente'),
   })
 
   return (
@@ -92,8 +93,11 @@ export function ClienteDialog({ open, onOpenChange, cliente, onSuccess }: Client
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="dni">DNI</Label>
+              <Label htmlFor="dni">DNI *</Label>
               <Input id="dni" {...form.register('dni')} />
+              {form.formState.errors.dni && (
+                <p className="text-xs text-destructive">{form.formState.errors.dni.message}</p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="telefono">Teléfono</Label>

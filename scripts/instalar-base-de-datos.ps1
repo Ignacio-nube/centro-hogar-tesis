@@ -55,6 +55,12 @@ if (-not (Get-Command mysql.exe -ErrorAction SilentlyContinue)) {
 $baseArgs = @("-h", $DbHost, "-P", "$DbPort", "-u", $DbUser, "--default-character-set=utf8mb4")
 if ($DbPass) { $baseArgs += "-p$DbPass" }
 
+# IMPORTANTE: por defecto PowerShell (5.1) codifica en ASCII lo que manda por el
+# pipe a un .exe, y convierte los acentos del SQL en '?'. Forzar UTF-8 para que
+# 'María', 'López', etc. lleguen intactos a MySQL.
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}
+
 Write-Host "=== Centro Hogar :: Instalar base de datos ===" -ForegroundColor Cyan
 Write-Host "Host:    $DbHost`:$DbPort"
 Write-Host "Usuario: $DbUser"
@@ -76,7 +82,7 @@ try {
 
 # 2. Aplicar el esquema
 Write-Host "[2/3] Aplicando estructura desde database.sql..."
-Get-Content $schemaSql -Raw | & mysql.exe @baseArgs
+Get-Content -LiteralPath $schemaSql -Raw -Encoding utf8 | & mysql.exe @baseArgs
 if ($LASTEXITCODE -ne 0) {
   Write-Error "Error al aplicar el esquema."
   exit 1
@@ -95,7 +101,7 @@ if ($SoloEstructura) {
 Write-Host "[3/3] Cargando datos de prueba desde seed.sql..."
 Write-Host "      Esto genera ~64.000 ventas. Puede tardar 5-15 minutos."
 $start = Get-Date
-Get-Content $seedSql -Raw | & mysql.exe @baseArgs $DbName
+Get-Content -LiteralPath $seedSql -Raw -Encoding utf8 | & mysql.exe @baseArgs $DbName
 if ($LASTEXITCODE -ne 0) {
   Write-Error "El seed fallo."
   exit 1

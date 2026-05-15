@@ -3,13 +3,17 @@ import { z } from 'zod'
 import { clientesService } from '../services/clientes.service'
 import * as r from '../utils/response'
 
+// '' o null/undefined → null; si no, el string sin tocar.
+const emptyToNull = (v: unknown) =>
+  v === '' || v === undefined ? null : v
+
 const createSchema = z.object({
-  nombre:    z.string().min(1).max(100),
-  apellido:  z.string().min(1).max(100),
-  dni:       z.string().max(20).nullish(),
-  telefono:  z.string().max(30).nullish(),
-  email:     z.string().email().nullish(),
-  direccion: z.string().max(255).nullish(),
+  nombre:    z.string().trim().min(1).max(100),
+  apellido:  z.string().trim().min(1).max(100),
+  dni:       z.string().trim().min(1, 'El DNI es requerido').max(20),
+  telefono:  z.preprocess(emptyToNull, z.string().max(30).nullable()),
+  email:     z.preprocess(emptyToNull, z.string().email('Email inválido').nullable()),
+  direccion: z.preprocess(emptyToNull, z.string().max(255).nullable()),
 })
 
 export const clientesController = {

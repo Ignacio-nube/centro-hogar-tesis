@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, SlidersHorizontal, List, MoreHorizontal } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, List, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +19,6 @@ import { PaginationControls } from '@/components/common/PaginationControls'
 import { ClienteDialog } from '@/features/clientes/components/ClienteDialog'
 import { clientesService } from '@/features/clientes/services/clientesService'
 import { usePermissions } from '@/hooks/usePermissions'
-import { useDebounce } from '@/hooks/useDebounce'
 import { formatDate } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import type { Cliente } from '@/types/app.types'
@@ -36,13 +34,8 @@ export default function ClientesPage() {
   const { can } = usePermissions()
   const canWrite = can('clientes.write')
 
-  const [search, setSearch] = useState('')
-  const debouncedSearch = useDebounce(search, 300)
-
-  // filtros pendientes
-  const [activoFilterPend, setActivoFilterPend] = useState<string>('activo')
-  // filtros aplicados
-  const [activoFilter, setActivoFilter] = useState<string>('activo')
+  const [searchInput, setSearchInput]     = useState('')
+  const [searchApplied, setSearchApplied] = useState('')
 
   const [page, setPage] = useState(1)
   const [modo, setModo] = useState<Modo>('inicial')
@@ -53,15 +46,12 @@ export default function ClientesPage() {
 
   const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
 
-  const activoParam =
-    activoFilter === 'activo' ? true : activoFilter === 'inactivo' ? false : undefined
-
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['clientes', debouncedSearch, activoFilter, page, modo],
+    queryKey: ['clientes', searchApplied, page, modo],
     queryFn: () =>
       clientesService.list({
-        search: debouncedSearch || undefined,
-        activo: activoParam,
+        search: searchApplied || undefined,
+        activo: true,
         sort: modo === 'todos' ? 'nombre' : 'recientes',
         page,
         pageSize,
@@ -110,15 +100,11 @@ export default function ClientesPage() {
     },
   })
 
-  function handleSearchChange(value: string) {
-    setSearch(value)
+  function buscar() {
+    const s = searchInput.trim()
+    setSearchApplied(s)
     setPage(1)
-    setModo(value.trim() ? 'buscando' : 'inicial')
-  }
-
-  function handleAplicarFiltros() {
-    setActivoFilter(activoFilterPend)
-    setPage(1)
+    if (modo !== 'todos') setModo(s ? 'buscando' : 'inicial')
   }
 
   function handleVerTodos() {
@@ -128,7 +114,8 @@ export default function ClientesPage() {
 
   function handleMostrarMenos() {
     setModo('inicial')
-    setSearch('')
+    setSearchInput('')
+    setSearchApplied('')
     setPage(1)
   }
 
@@ -250,27 +237,17 @@ export default function ClientesPage() {
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nombre, apellido o DNI..."
+            placeholder="Buscar por nombre, apellido o DNI... (Enter para buscar)"
             className="pl-9 focus-visible:border-brand"
-            value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') buscar() }}
           />
         </div>
 
-        <Select value={activoFilterPend} onValueChange={setActivoFilterPend}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            <SelectItem value="activo">Activos</SelectItem>
-            <SelectItem value="inactivo">Inactivos</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button variant="outline" size="sm" onClick={handleAplicarFiltros}>
-          <SlidersHorizontal className="size-3.5 mr-1.5" />
-          Aplicar filtros
+        <Button size="sm" onClick={buscar}>
+          <Search className="size-3.5 mr-1.5" />
+          Buscar
         </Button>
 
         {modo !== 'todos' ? (

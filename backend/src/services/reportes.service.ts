@@ -1,5 +1,19 @@
 import { pool } from '../config/database'
 
+// Cache en memoria del dashboard: los datos cambian lento y la agregación sobre
+// venta_items es cara. TTL corto para no servir datos viejos.
+const DASHBOARD_TTL_MS = 60_000
+
+interface DashboardResult {
+  periodo: 'semana' | 'mes' | 'trimestre' | 'anio'
+  dias: number
+  categorias_top: { categoria: string; unidades: number; ingreso: number }[]
+  productos_por_categoria: { categoria: string; producto: string; unidades: number; ingreso: number }[]
+  vendedores_top: { vendedor: string; total_ventas: number; monto_total: number }[]
+}
+
+const dashboardCache = new Map<string, { at: number; data: DashboardResult }>()
+
 export const reportesService = {
 
   async ventasPorPeriodo(fechaDesde: string, fechaHasta: string) {
@@ -170,15 +184,17 @@ export const reportesService = {
 
   /** Top N categorías por unidades vendidas en el período. Agrupa el resto en "Otros". */
   async categoriasPorVentas(fechaDesde: string, fechaHasta: string, topN = 5): Promise<{ categoria: string; unidades: number; ingreso: number }[]> {
+    // Arranca desde ventas filtrando estado+fecha (usa idx_ventas_estado_fecha) y
+    // recién después une venta_items: evita escanear ~200k ítems del histórico.
     const [rows] = await pool.execute<any[]>(
       `SELECT COALESCE(c.nombre, 'Sin categoría') AS categoria,
               SUM(vi.cantidad) AS unidades,
               SUM(vi.subtotal) AS ingreso
-       FROM venta_items vi
-       JOIN productos p  ON p.id = vi.producto_id
+       FROM ventas v
+       JOIN venta_items vi ON vi.venta_id = v.id
+       JOIN productos p     ON p.id = vi.producto_id
        LEFT JOIN categorias c ON c.id = p.categoria_id
-       JOIN ventas v     ON v.id = vi.venta_id AND v.estado_id = 1
-                        AND v.created_at BETWEEN ? AND ?
+       WHERE v.estado_id = 1 AND v.created_at BETWEEN ? AND ?
        GROUP BY p.categoria_id, c.nombre
        ORDER BY unidades DESC`,
       [fechaDesde, fechaHasta],
@@ -199,37 +215,47 @@ export const reportesService = {
    * Top M productos por cada categoría (solo las del topN de categorías) en el período.
    * Productos menores de cada categoría se agrupan como "Otros".
    */
-  async productosPorCategoria(categorias: string[], fechaDesde: string, fechaHasta: string, topM = 3): Promise<
+  /** Productos agrupados por categoría en el período (todas las categorías, sin recortar). */
+  async productosPorCategoriaRaw(fechaDesde: string, fechaHasta: string): Promise<
     { categoria: string; producto: string; unidades: number; ingreso: number }[]
   > {
-    if (categorias.length === 0) return []
-    // Excluimos "Otros" y "Sin categoría" del join — son grupos sintéticos
-    const realCats = categorias.filter((c) => c !== 'Otros' && c !== 'Sin categoría')
-    if (realCats.length === 0) return []
-
-    const placeholders = realCats.map(() => '?').join(',')
+    // Arranca desde ventas (usa idx_ventas_estado_fecha) y no filtra por lista de
+    // categorías: así no depende de categoriasPorVentas y corre en paralelo.
     const [rows] = await pool.execute<any[]>(
       `SELECT COALESCE(c.nombre, 'Sin categoría') AS categoria,
               p.nombre AS producto,
               SUM(vi.cantidad) AS unidades,
               SUM(vi.subtotal) AS ingreso
-       FROM venta_items vi
-       JOIN productos p  ON p.id = vi.producto_id
+       FROM ventas v
+       JOIN venta_items vi ON vi.venta_id = v.id
+       JOIN productos p     ON p.id = vi.producto_id
        LEFT JOIN categorias c ON c.id = p.categoria_id
-       JOIN ventas v     ON v.id = vi.venta_id AND v.estado_id = 1
-                        AND v.created_at BETWEEN ? AND ?
-       WHERE COALESCE(c.nombre, 'Sin categoría') IN (${placeholders})
+       WHERE v.estado_id = 1 AND v.created_at BETWEEN ? AND ?
        GROUP BY p.categoria_id, c.nombre, p.id, p.nombre
        ORDER BY categoria ASC, unidades DESC`,
-      [fechaDesde, fechaHasta, ...realCats],
+      [fechaDesde, fechaHasta],
     )
+    return rows.map((r: any) => ({
+      categoria: String(r.categoria),
+      producto:  String(r.producto),
+      unidades:  Number(r.unidades),
+      ingreso:   Number(r.ingreso),
+    }))
+  },
 
-    // Agrupar por categoría y tomar top M + Otros
+  /** Recorta a top M + "Otros" por cada categoría real, respetando el orden de `categorias`. */
+  shapeProductosPorCategoria(
+    rawRows: { categoria: string; producto: string; unidades: number; ingreso: number }[],
+    categorias: string[],
+    topM = 3,
+  ): { categoria: string; producto: string; unidades: number; ingreso: number }[] {
+    const realCats = categorias.filter((c) => c !== 'Otros' && c !== 'Sin categoría')
+    if (realCats.length === 0) return []
+
     const byCat: Record<string, { producto: string; unidades: number; ingreso: number }[]> = {}
-    for (const r of rows as any[]) {
-      const cat = String(r.categoria)
-      if (!byCat[cat]) byCat[cat] = []
-      byCat[cat].push({ producto: String(r.producto), unidades: Number(r.unidades), ingreso: Number(r.ingreso) })
+    for (const r of rawRows) {
+      if (!byCat[r.categoria]) byCat[r.categoria] = []
+      byCat[r.categoria].push({ producto: r.producto, unidades: r.unidades, ingreso: r.ingreso })
     }
 
     const result: { categoria: string; producto: string; unidades: number; ingreso: number }[] = []
@@ -242,6 +268,14 @@ export const reportesService = {
       if (restU > 0) result.push({ categoria: cat, producto: 'Otros', unidades: restU, ingreso: restI })
     }
     return result
+  },
+
+  async productosPorCategoria(categorias: string[], fechaDesde: string, fechaHasta: string, topM = 3): Promise<
+    { categoria: string; producto: string; unidades: number; ingreso: number }[]
+  > {
+    if (categorias.length === 0) return []
+    const raw = await this.productosPorCategoriaRaw(fechaDesde, fechaHasta)
+    return this.shapeProductosPorCategoria(raw, categorias, topM)
   },
 
   /** Top N vendedores en el período por monto total. */
@@ -279,25 +313,36 @@ export const reportesService = {
                : periodo === 'trimestre' ? 90
                : 365
 
+    const cached = dashboardCache.get(periodo)
+    if (cached && Date.now() - cached.at < DASHBOARD_TTL_MS) {
+      return cached.data
+    }
+
     const ahora      = new Date()
     const fechaHasta = ahora.toISOString().slice(0, 10) + ' 23:59:59'
     const desde      = new Date(ahora)
     desde.setDate(desde.getDate() - (dias - 1))
     const fechaDesde = desde.toISOString().slice(0, 10) + ' 00:00:00'
 
-    const [categoriasRaw, vendedores] = await Promise.all([
+    // Las 3 consultas pesadas corren en paralelo: productos ya no espera a
+    // categorías (el recorte top-N se hace en JS sobre los datos crudos).
+    const [categoriasRaw, vendedores, productosRaw] = await Promise.all([
       this.categoriasPorVentas(fechaDesde, fechaHasta, TOP_CATS),
       this.vendedoresTop(fechaDesde, fechaHasta, 5),
+      this.productosPorCategoriaRaw(fechaDesde, fechaHasta),
     ])
     const catNames  = categoriasRaw.map((c) => c.categoria)
-    const productos = await this.productosPorCategoria(catNames, fechaDesde, fechaHasta, TOP_PRODS)
-    return {
+    const productos = this.shapeProductosPorCategoria(productosRaw, catNames, TOP_PRODS)
+
+    const data: DashboardResult = {
       periodo,
       dias,
       categorias_top:          categoriasRaw,
       productos_por_categoria: productos,
       vendedores_top:          vendedores,
     }
+    dashboardCache.set(periodo, { at: Date.now(), data })
+    return data
   },
 
   async resumenCompleto(fechaDesde: string, fechaHasta: string) {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Search, SlidersHorizontal, List } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, SlidersHorizontal, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,15 +14,14 @@ import { PaginationControls } from '@/components/common/PaginationControls'
 import { ProductoDialog } from '@/features/productos/components/ProductoDialog'
 import { productosService } from '@/features/productos/services/productosService'
 import { usePermissions } from '@/hooks/usePermissions'
-import { useDebounce } from '@/hooks/useDebounce'
 import { formatCurrency } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import type { Producto } from '@/types/app.types'
 
-type Modo = 'inicial' | 'buscando' | 'todos'
+type Modo = 'inicial' | 'resultado'
 
-const PAGE_SIZE_INICIAL  = 5
-const PAGE_SIZE_TODOS    = 15
+const PAGE_SIZE_INICIAL   = 5
+const PAGE_SIZE_RESULTADO = 15
 
 export default function ProductosPage() {
   const qc = useQueryClient()
@@ -30,18 +29,16 @@ export default function ProductosPage() {
   const { can } = usePermissions()
   const canWrite = can('productos.write')
 
-  // --- búsqueda ---
-  const [search, setSearch] = useState('')
-  const debouncedSearch = useDebounce(search, 300)
+  // --- búsqueda (NO dispara sola — se aplica con Enter o el botón) ---
+  const [searchInput, setSearchInput]     = useState('')
+  const [searchApplied, setSearchApplied] = useState('')
 
   // --- filtros pendientes (no aplicados aún) ---
   const [categoriaIdPend, setCategoriaIdPend] = useState<string>('')
-  const [activoFilterPend, setActivoFilterPend] = useState<string>('activo')
   const [stockFilterPend, setStockFilterPend] = useState<string>('all')
 
   // --- filtros aplicados (los que se mandan al backend) ---
   const [categoriaId, setCategoriaId] = useState<string>('')
-  const [activoFilter, setActivoFilter] = useState<string>('activo')
   const [stockFilter, setStockFilter] = useState<string>('all')
 
   const [page, setPage] = useState(1)
@@ -51,17 +48,18 @@ export default function ProductosPage() {
   const [editingProducto, setEditingProducto] = useState<Producto | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
+  const pageSize = modo === 'inicial' ? PAGE_SIZE_INICIAL : PAGE_SIZE_RESULTADO
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['productos', debouncedSearch, categoriaId, activoFilter, stockFilter, page, modo],
+    queryKey: ['productos', modo, searchApplied, categoriaId, stockFilter, page, pageSize],
     queryFn: () =>
       productosService.list({
-        search: debouncedSearch || undefined,
+        search: searchApplied || undefined,
         categoriaId: categoriaId || undefined,
-        soloActivos:   activoFilter === 'activo',
-        soloInactivos: activoFilter === 'inactivo',
+        soloActivos:   true,
+        soloInactivos: false,
         bajoStock: stockFilter === 'bajo',
+        conStock:  stockFilter === 'con',
         sort: modo === 'inicial' ? 'top' : 'nombre',
         page,
         pageSize,
@@ -96,36 +94,26 @@ export default function ProductosPage() {
     onError: () => toast.error('No se pudo actualizar el estado'),
   })
 
-  function handleSearchChange(value: string) {
-    setSearch(value)
-    setPage(1)
-    if (value.trim()) {
-      setModo('buscando')
-    } else {
-      setModo('inicial')
-    }
-  }
-
-  function handleAplicarFiltros() {
+  function aplicar() {
+    const s = searchInput.trim()
+    setSearchApplied(s)
     setCategoriaId(categoriaIdPend)
-    setActivoFilter(activoFilterPend)
     setStockFilter(stockFilterPend)
     setPage(1)
+    const hayAlgo = !!(s || categoriaIdPend || stockFilterPend !== 'all')
+    setModo(hayAlgo ? 'resultado' : 'inicial')
   }
 
-  function handleVerTodos() {
-    setModo('todos')
+  function limpiar() {
+    setSearchInput('')
+    setSearchApplied('')
+    setCategoriaIdPend(''); setStockFilterPend('all')
+    setCategoriaId('');     setStockFilter('all')
     setPage(1)
-  }
-
-  function handleMostrarMenos() {
     setModo('inicial')
-    setSearch('')
-    setPage(1)
   }
 
   const totalCount = data?.count ?? 0
-  const mostrarPaginacion = modo !== 'inicial'
 
   const columns: Column<Producto>[] = useMemo(() => [
     {
@@ -262,10 +250,11 @@ export default function ProductosPage() {
           <div className="relative flex-1 min-w-48 max-w-sm">
             <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nombre o código..."
+              placeholder="Buscar por nombre o código... (Enter para buscar)"
               className="pl-9"
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') aplicar() }}
             />
           </div>
 
@@ -285,20 +274,6 @@ export default function ProductosPage() {
           </Select>
 
           <Select
-            value={activoFilterPend}
-            onValueChange={setActivoFilterPend}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              <SelectItem value="activo">Activos</SelectItem>
-              <SelectItem value="inactivo">Inactivos</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
             value={stockFilterPend}
             onValueChange={setStockFilterPend}
           >
@@ -307,34 +282,25 @@ export default function ProductosPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los stocks</SelectItem>
+              <SelectItem value="con">Con stock</SelectItem>
               <SelectItem value="bajo">Bajo stock</SelectItem>
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="sm" onClick={handleAplicarFiltros}>
+          <Button size="sm" onClick={aplicar}>
             <SlidersHorizontal className="size-3.5 mr-1.5" />
             Aplicar filtros
           </Button>
 
-          {modo !== 'todos' && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto"
-              onClick={handleVerTodos}
-            >
-              <List className="size-3.5 mr-1.5" />
-              Ver todos
-            </Button>
-          )}
-          {modo === 'todos' && (
+          {modo === 'resultado' && (
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto text-muted-foreground"
-              onClick={handleMostrarMenos}
+              className="text-muted-foreground"
+              onClick={limpiar}
             >
-              Mostrar menos
+              <X className="size-3.5 mr-1.5" />
+              Limpiar
             </Button>
           )}
         </div>
@@ -353,7 +319,7 @@ export default function ProductosPage() {
         />
       )}
 
-      {mostrarPaginacion && (
+      {modo === 'resultado' && (
         <PaginationControls
           page={page}
           pageSize={pageSize}

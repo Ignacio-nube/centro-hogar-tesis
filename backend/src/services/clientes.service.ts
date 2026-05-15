@@ -3,6 +3,12 @@ import { buildPaginated, parsePagination } from '../utils/pagination'
 import { escapeLike } from '../utils/sql'
 import type { Cliente, Venta, PaginatedResult } from '../models/types'
 
+/** '' o solo espacios → null. Evita guardar '' que choca contra los UNIQUE de dni/email. */
+function nullIfEmpty(v: string | null | undefined): string | null {
+  const t = typeof v === 'string' ? v.trim() : v
+  return t ? t : null
+}
+
 export const clientesService = {
 
   async list(params: {
@@ -62,7 +68,7 @@ export const clientesService = {
     const [result] = await pool.execute<any>(
       `INSERT INTO clientes (nombre, apellido, dni, telefono, email, direccion)
        VALUES (?,?,?,?,?,?)`,
-      [data.nombre, data.apellido, data.dni ?? null, data.telefono ?? null, data.email ?? null, data.direccion ?? null]
+      [data.nombre, data.apellido, nullIfEmpty(data.dni), nullIfEmpty(data.telefono), nullIfEmpty(data.email), nullIfEmpty(data.direccion)]
     )
     const id = (result as { insertId: number }).insertId
     return this.getById(id) as Promise<Cliente>
@@ -81,10 +87,11 @@ export const clientesService = {
     const values: (string | number | boolean | null)[] = []
 
     const cols = ['nombre', 'apellido', 'dni', 'telefono', 'email', 'direccion'] as const
+    const nullables = new Set<string>(['dni', 'telefono', 'email', 'direccion'])
     for (const col of cols) {
       if ((data as any)[col] !== undefined) {
         fields.push(`${col} = ?`)
-        values.push((data as any)[col])
+        values.push(nullables.has(col) ? nullIfEmpty((data as any)[col]) : (data as any)[col])
       }
     }
     if (data.activo !== undefined) {

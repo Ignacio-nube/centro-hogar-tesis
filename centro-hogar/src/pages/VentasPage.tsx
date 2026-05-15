@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, SlidersHorizontal, List, Search } from 'lucide-react'
+import { Plus, Download, Banknote, CreditCard, ArrowLeftRight, SlidersHorizontal, Search, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { format, startOfMonth, startOfWeek, subDays, subMonths } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -13,14 +14,13 @@ import { ventasService } from '@/features/ventas/services/ventasService'
 import { formatCurrency, formatDateTime, cn } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import { usePermissions } from '@/hooks/usePermissions'
-import { useDebounce } from '@/hooks/useDebounce'
 import { toast } from 'sonner'
 import type { Venta } from '@/types/app.types'
 
-type Modo = 'inicial' | 'buscando' | 'todos'
+type Modo = 'inicial' | 'resultado'
 
 const PAGE_SIZE_INICIAL = 5
-const PAGE_SIZE_TODOS   = 15
+const PAGE_SIZE_RESULTADO = 15
 
 const ESTADO_BADGE: Record<string, string> = {
   completada: 'bg-green-100 text-green-700 border border-green-200',
@@ -40,6 +40,25 @@ const METODO_ICON: Record<string, React.ElementType> = {
   transferencia: ArrowLeftRight,
 }
 
+// Presets de rango de fechas (mismo patrón que ReportesPage)
+const fmt = (d: Date) => format(d, 'yyyy-MM-dd')
+const PRESETS: { label: string; getRange: () => { desde: string; hasta: string } }[] = [
+  { label: 'Hoy',          getRange: () => ({ desde: fmt(new Date()), hasta: fmt(new Date()) }) },
+  { label: 'Esta semana',  getRange: () => ({ desde: fmt(startOfWeek(new Date(), { weekStartsOn: 1 })), hasta: fmt(new Date()) }) },
+  { label: 'Este mes',     getRange: () => ({ desde: fmt(startOfMonth(new Date())), hasta: fmt(new Date()) }) },
+  { label: 'Últimos 30 días', getRange: () => ({ desde: fmt(subDays(new Date(), 29)), hasta: fmt(new Date()) }) },
+  {
+    label: 'Mes anterior',
+    getRange: () => {
+      const mesAnt = subMonths(new Date(), 1)
+      return {
+        desde: fmt(startOfMonth(mesAnt)),
+        hasta: fmt(new Date(mesAnt.getFullYear(), mesAnt.getMonth() + 1, 0)),
+      }
+    },
+  },
+]
+
 export default function VentasPage() {
   const { can } = usePermissions()
   const navigate = useNavigate()
@@ -48,32 +67,35 @@ export default function VentasPage() {
   const [modo, setModo] = useState<Modo>('inicial')
   const [page, setPage] = useState(1)
 
-  // búsqueda con debounce
-  const [search, setSearch] = useState('')
-  const debouncedSearch = useDebounce(search, 300)
+  // búsqueda (NO dispara sola — se aplica con Enter o el botón)
+  const [searchInput, setSearchInput]   = useState('')
+  const [searchApplied, setSearchApplied] = useState('')
 
-  // filtros pendientes
-  const [estadoPend, setEstadoPend]           = useState('completada')
-  const [metodoPagoPend, setMetodoPagoPend]   = useState('')
-  const [vendedorIdPend, setVendedorIdPend]   = useState('')
-  // filtros aplicados
-  const [estado, setEstado]                   = useState('completada')
-  const [metodoPago, setMetodoPago]           = useState('')
-  const [vendedorId, setVendedorId]           = useState('')
+  // filtros pendientes (lo que el usuario está editando)
+  const [desdePend, setDesdePend]           = useState('')
+  const [hastaPend, setHastaPend]           = useState('')
+  const [metodoPagoPend, setMetodoPagoPend] = useState('')
+  const [vendedorIdPend, setVendedorIdPend] = useState('')
+  // filtros aplicados (lo que va al backend)
+  const [desde, setDesde]           = useState('')
+  const [hasta, setHasta]           = useState('')
+  const [metodoPago, setMetodoPago] = useState('')
+  const [vendedorId, setVendedorId] = useState('')
 
-  const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
+  const pageSize = modo === 'inicial' ? PAGE_SIZE_INICIAL : PAGE_SIZE_RESULTADO
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['ventas', debouncedSearch, page, pageSize, estado, metodoPago, vendedorId, modo],
+    queryKey: ['ventas', modo, searchApplied, desde, hasta, metodoPago, vendedorId, page, pageSize],
     queryFn: () =>
       ventasService.list({
         page,
         pageSize,
-        search:     debouncedSearch || undefined,
-        estado:     estado     || undefined,
+        search:     searchApplied || undefined,
         metodoPago: metodoPago || undefined,
         vendedorId: vendedorId || undefined,
-        // Modo "inicial" no muestra paginación: ahorrar el COUNT(*) sobre 60k+ filas.
+        fechaDesde: desde ? `${desde} 00:00:00` : undefined,
+        fechaHasta: hasta ? `${hasta} 23:59:59` : undefined,
+        // Modo "inicial": preview liviano sin COUNT(*) sobre 64k+ filas.
         skipCount:  modo === 'inicial',
       }),
     staleTime: modo === 'inicial' ? 1000 * 60 * 5 : 0,
@@ -85,36 +107,34 @@ export default function VentasPage() {
     staleTime: 1000 * 60 * 10,
   })
 
-  function handleSearchChange(value: string) {
-    setSearch(value)
-    setPage(1)
-    if (value.trim()) {
-      setModo('buscando')
-    } else if (modo === 'buscando') {
-      setModo('inicial')
-    }
-  }
-
-  function handleAplicarFiltros() {
-    setEstado(estadoPend)
+  function aplicar() {
+    const s = searchInput.trim()
+    setSearchApplied(s)
+    setDesde(desdePend)
+    setHasta(hastaPend)
     setMetodoPago(metodoPagoPend)
     setVendedorId(vendedorIdPend)
     setPage(1)
+    const hayAlgo = !!(s || desdePend || hastaPend || metodoPagoPend || vendedorIdPend)
+    setModo(hayAlgo ? 'resultado' : 'inicial')
   }
 
-  function handleVerTodos() {
-    setModo('todos')
+  function limpiar() {
+    setSearchInput('')
+    setSearchApplied('')
+    setDesdePend(''); setHastaPend(''); setMetodoPagoPend(''); setVendedorIdPend('')
+    setDesde('');     setHasta('');     setMetodoPago('');     setVendedorId('')
     setPage(1)
-  }
-
-  function handleMostrarMenos() {
     setModo('inicial')
-    setSearch('')
-    setPage(1)
+  }
+
+  function aplicarPreset(getRange: () => { desde: string; hasta: string }) {
+    const { desde: d, hasta: h } = getRange()
+    setDesdePend(d)
+    setHastaPend(h)
   }
 
   const totalCount = data?.count ?? 0
-  const mostrarPaginacion = modo !== 'inicial'
 
   const columns: Column<Venta>[] = useMemo(() => [
     {
@@ -196,8 +216,6 @@ export default function VentasPage() {
         description={
           modo === 'inicial'
             ? '5 ventas más recientes'
-            : modo === 'buscando'
-            ? `Buscando "${search}"`
             : `${totalCount} ventas encontradas`
         }
         action={
@@ -214,84 +232,94 @@ export default function VentasPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar por nº de venta o nombre de cliente..."
+          placeholder="Buscar por nº de venta o nombre de cliente... (Enter para buscar)"
           className="pl-9"
-          value={search}
-          onChange={(e) => handleSearchChange(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') aplicar() }}
         />
       </div>
 
       {/* Filtros */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Select
-          value={vendedorIdPend || 'all'}
-          onValueChange={(v) => setVendedorIdPend(v === 'all' ? '' : v)}
-        >
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Todos los vendedores" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los vendedores</SelectItem>
-            {(usuarios ?? []).map((u) => (
-              <SelectItem key={u.id} value={String(u.id)}>{u.nombre} {u.apellido}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-end gap-2 flex-wrap">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Desde</label>
+            <Input
+              type="date"
+              className="w-40"
+              value={desdePend}
+              max={hastaPend || undefined}
+              onChange={(e) => setDesdePend(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">Hasta</label>
+            <Input
+              type="date"
+              className="w-40"
+              value={hastaPend}
+              min={desdePend || undefined}
+              onChange={(e) => setHastaPend(e.target.value)}
+            />
+          </div>
 
-        <Select
-          value={estadoPend || 'all'}
-          onValueChange={(v) => setEstadoPend(v === 'all' ? '' : v)}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            <SelectItem value="completada">Completada</SelectItem>
-            <SelectItem value="cancelada">Cancelada</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={metodoPagoPend || 'all'}
-          onValueChange={(v) => setMetodoPagoPend(v === 'all' ? '' : v)}
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Todos los métodos" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los métodos</SelectItem>
-            <SelectItem value="efectivo">Efectivo</SelectItem>
-            <SelectItem value="tarjeta">Tarjeta</SelectItem>
-            <SelectItem value="transferencia">Transferencia</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button variant="outline" size="sm" onClick={handleAplicarFiltros}>
-          <SlidersHorizontal className="size-3.5 mr-1.5" />
-          Aplicar filtros
-        </Button>
-
-        {modo !== 'todos' ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={handleVerTodos}
+          <Select
+            value={vendedorIdPend || 'all'}
+            onValueChange={(v) => setVendedorIdPend(v === 'all' ? '' : v)}
           >
-            <List className="size-3.5 mr-1.5" />
-            Ver todos
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-muted-foreground"
-            onClick={handleMostrarMenos}
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Todos los vendedores" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los vendedores</SelectItem>
+              {(usuarios ?? []).map((u) => (
+                <SelectItem key={u.id} value={String(u.id)}>{u.nombre} {u.apellido}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={metodoPagoPend || 'all'}
+            onValueChange={(v) => setMetodoPagoPend(v === 'all' ? '' : v)}
           >
-            Mostrar menos
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Todos los métodos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los métodos</SelectItem>
+              <SelectItem value="efectivo">Efectivo</SelectItem>
+              <SelectItem value="tarjeta">Tarjeta</SelectItem>
+              <SelectItem value="transferencia">Transferencia</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Button size="sm" onClick={aplicar}>
+            <SlidersHorizontal className="size-3.5 mr-1.5" />
+            Aplicar filtros
           </Button>
-        )}
+
+          {modo === 'resultado' && (
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={limpiar}>
+              <X className="size-3.5 mr-1.5" />
+              Limpiar
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {PRESETS.map((p) => (
+            <Button
+              key={p.label}
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => aplicarPreset(p.getRange)}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {isError ? (
@@ -302,12 +330,12 @@ export default function VentasPage() {
           data={data?.data ?? []}
           isLoading={isLoading}
           rowKey={(v) => v.id}
-          emptyMessage="No hay ventas registradas."
+          emptyMessage="No se encontraron ventas con esos filtros."
           onRowClick={(v) => navigate(`/ventas/${v.id}`)}
         />
       )}
 
-      {mostrarPaginacion && (
+      {modo === 'resultado' && (
         <PaginationControls
           page={page}
           pageSize={pageSize}

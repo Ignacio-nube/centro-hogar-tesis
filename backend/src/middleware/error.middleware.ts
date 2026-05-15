@@ -17,7 +17,8 @@ export function errorHandler(
     const sqlMessage = mysqlErr.sqlMessage ?? ''
     let message = 'Ya existe un registro con esos datos'
     if (/uq_productos_codigo/i.test(sqlMessage))   message = 'Ya existe un producto con ese código'
-    else if (/uq_clientes_dni/i.test(sqlMessage))  message = 'Ya existe un cliente con ese DNI'
+    else if (/uq_clientes_dni/i.test(sqlMessage))   message = 'Ya existe un cliente con ese DNI'
+    else if (/uq_clientes_email/i.test(sqlMessage)) message = 'Ya existe un cliente con ese email'
     else if (/uq_ventas_numero/i.test(sqlMessage)) message = 'Conflicto generando número de venta. Intente nuevamente.'
     else if (/uq_usuarios_email/i.test(sqlMessage) || /email/i.test(sqlMessage)) message = 'Ya existe un usuario con ese email'
     res.status(409).json({ success: false, message })
