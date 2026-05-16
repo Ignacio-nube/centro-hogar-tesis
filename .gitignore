@@ -32,8 +32,6 @@ yarn-error.log*
 # OS
 Thumbs.db
 
-# Tooling de IA (opencode / agente) — configuración local, no es código del proyecto
-.agents/
+# Tooling de IA local (Claude Code) — no es código del proyecto
+.claude/settings.local.json
 .playwright-mcp/
-opencode.json
-skills-lock.json

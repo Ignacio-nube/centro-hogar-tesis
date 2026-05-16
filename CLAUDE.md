@@ -1,6 +1,6 @@
-# Centro Hogar — Instrucciones para agentes de IA
+# Centro Hogar — Guía para Claude Code
 
-Este documento describe el stack tecnológico y las convenciones del proyecto para que cualquier agente de IA pueda contribuir correctamente.
+Este documento describe el stack tecnológico y las convenciones del proyecto para que Claude Code pueda contribuir correctamente.
 
 ---
 
@@ -85,7 +85,7 @@ tesis/
 - Los controladores solo orquestan; la lógica va en `src/services/`
 - Las rutas se registran en `src/routes/index.ts`
 - Variables de entorno se leen desde `src/config/env.ts` (nunca leer `process.env` directamente)
-- Los endpoints protegidos requieren `authMiddleware` y opcionalmente `soloAdmin` / `soloEncargadoOAdmin`
+- Los endpoints protegidos requieren `authMiddleware` y opcionalmente `soloAdmin` / `adminOStock`
 
 ### Base de datos
 

@@ -27,7 +27,7 @@ Panel de administración web para una mueblería. Permite gestionar clientes, pr
 centro-hogar-tesis/
 ├── centro-hogar/   # Frontend — React SPA
 ├── backend/        # Backend — API REST Express
-├── scripts/        # Scripts PowerShell para mover la DB entre PCs
+├── scripts/        # Script PowerShell para instalar/poblar la DB
 ├── database.sql    # Esquema MySQL completo
 ├── seed.sql        # Datos de prueba iniciales
 └── datos.txt       # Credenciales de prueba
@@ -157,7 +157,9 @@ Una vez instalado, hay dos mecanismos complementarios para hacer copias de segur
 | Vía | Qué incluye | Cuándo usarla |
 |-----|-------------|---------------|
 | **Ajustes → Copia de seguridad** | Excel/CSV de todas las tablas, accesible desde la app | Para entregar al cliente o archivar mensualmente |
-| **`scripts/db-export.ps1`** | Dump SQL nativo (estructura + datos + triggers) | Para migrar a otra PC o restaurar después de un crash |
+| **Reimportar con `scripts/instalar-base-de-datos.ps1`** | Estructura (`database.sql`) + datos de prueba (`seed.sql`) | Para levantar la base en otra PC desde cero |
+
+> Para mover datos reales entre PCs, exportá la base desde phpMyAdmin (pestaña **Exportar**) e importala con la pestaña **Importar** en la otra máquina.
 
 También hay una sección de **Limpieza de ventas antiguas** dentro de Ajustes que permite borrar definitivamente ventas con más de N años (2/3/5/10) si la base crece demasiado.
 
