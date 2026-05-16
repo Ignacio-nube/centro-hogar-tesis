@@ -36,10 +36,12 @@ export default function ProductosPage() {
   // --- filtros pendientes (no aplicados aún) ---
   const [categoriaIdPend, setCategoriaIdPend] = useState<string>('')
   const [stockFilterPend, setStockFilterPend] = useState<string>('all')
+  const [estadoPend, setEstadoPend] = useState<'activo' | 'inactivo'>('activo')
 
   // --- filtros aplicados (los que se mandan al backend) ---
   const [categoriaId, setCategoriaId] = useState<string>('')
   const [stockFilter, setStockFilter] = useState<string>('all')
+  const [estado, setEstado]           = useState<'activo' | 'inactivo'>('activo')
 
   const [page, setPage] = useState(1)
   const [modo, setModo] = useState<Modo>('inicial')
@@ -51,13 +53,13 @@ export default function ProductosPage() {
   const pageSize = modo === 'inicial' ? PAGE_SIZE_INICIAL : PAGE_SIZE_RESULTADO
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['productos', modo, searchApplied, categoriaId, stockFilter, page, pageSize],
+    queryKey: ['productos', modo, searchApplied, categoriaId, stockFilter, estado, page, pageSize],
     queryFn: () =>
       productosService.list({
         search: searchApplied || undefined,
         categoriaId: categoriaId || undefined,
-        soloActivos:   true,
-        soloInactivos: false,
+        soloActivos:   estado === 'activo',
+        soloInactivos: estado === 'inactivo',
         bajoStock: stockFilter === 'bajo',
         conStock:  stockFilter === 'con',
         sort: modo === 'inicial' ? 'top' : 'nombre',
@@ -99,16 +101,17 @@ export default function ProductosPage() {
     setSearchApplied(s)
     setCategoriaId(categoriaIdPend)
     setStockFilter(stockFilterPend)
+    setEstado(estadoPend)
     setPage(1)
-    const hayAlgo = !!(s || categoriaIdPend || stockFilterPend !== 'all')
+    const hayAlgo = !!(s || categoriaIdPend || stockFilterPend !== 'all' || estadoPend !== 'activo')
     setModo(hayAlgo ? 'resultado' : 'inicial')
   }
 
   function limpiar() {
     setSearchInput('')
     setSearchApplied('')
-    setCategoriaIdPend(''); setStockFilterPend('all')
-    setCategoriaId('');     setStockFilter('all')
+    setCategoriaIdPend(''); setStockFilterPend('all'); setEstadoPend('activo')
+    setCategoriaId('');     setStockFilter('all');     setEstado('activo')
     setPage(1)
     setModo('inicial')
   }
@@ -284,6 +287,19 @@ export default function ProductosPage() {
               <SelectItem value="all">Todos los stocks</SelectItem>
               <SelectItem value="con">Con stock</SelectItem>
               <SelectItem value="bajo">Bajo stock</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={estadoPend}
+            onValueChange={(v) => setEstadoPend(v as 'activo' | 'inactivo')}
+          >
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="activo">Activos</SelectItem>
+              <SelectItem value="inactivo">Inactivos</SelectItem>
             </SelectContent>
           </Select>
 

@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import type { Venta } from '@/types/app.types'
 
 type Modo = 'inicial' | 'resultado'
+type EstadoVenta = 'completada' | 'cancelada'
 
 const PAGE_SIZE_INICIAL = 5
 const PAGE_SIZE_RESULTADO = 15
@@ -76,21 +77,24 @@ export default function VentasPage() {
   const [hastaPend, setHastaPend]           = useState('')
   const [metodoPagoPend, setMetodoPagoPend] = useState('')
   const [vendedorIdPend, setVendedorIdPend] = useState('')
+  const [estadoPend, setEstadoPend]         = useState<EstadoVenta>('completada')
   // filtros aplicados (lo que va al backend)
   const [desde, setDesde]           = useState('')
   const [hasta, setHasta]           = useState('')
   const [metodoPago, setMetodoPago] = useState('')
   const [vendedorId, setVendedorId] = useState('')
+  const [estado, setEstado]         = useState<EstadoVenta>('completada')
 
   const pageSize = modo === 'inicial' ? PAGE_SIZE_INICIAL : PAGE_SIZE_RESULTADO
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['ventas', modo, searchApplied, desde, hasta, metodoPago, vendedorId, page, pageSize],
+    queryKey: ['ventas', modo, searchApplied, estado, desde, hasta, metodoPago, vendedorId, page, pageSize],
     queryFn: () =>
       ventasService.list({
         page,
         pageSize,
         search:     searchApplied || undefined,
+        estado,
         metodoPago: metodoPago || undefined,
         vendedorId: vendedorId || undefined,
         fechaDesde: desde ? `${desde} 00:00:00` : undefined,
@@ -114,16 +118,17 @@ export default function VentasPage() {
     setHasta(hastaPend)
     setMetodoPago(metodoPagoPend)
     setVendedorId(vendedorIdPend)
+    setEstado(estadoPend)
     setPage(1)
-    const hayAlgo = !!(s || desdePend || hastaPend || metodoPagoPend || vendedorIdPend)
+    const hayAlgo = !!(s || desdePend || hastaPend || metodoPagoPend || vendedorIdPend || estadoPend !== 'completada')
     setModo(hayAlgo ? 'resultado' : 'inicial')
   }
 
   function limpiar() {
     setSearchInput('')
     setSearchApplied('')
-    setDesdePend(''); setHastaPend(''); setMetodoPagoPend(''); setVendedorIdPend('')
-    setDesde('');     setHasta('');     setMetodoPago('');     setVendedorId('')
+    setDesdePend(''); setHastaPend(''); setMetodoPagoPend(''); setVendedorIdPend(''); setEstadoPend('completada')
+    setDesde('');     setHasta('');     setMetodoPago('');     setVendedorId('');     setEstado('completada')
     setPage(1)
     setModo('inicial')
   }
@@ -291,6 +296,19 @@ export default function VentasPage() {
               <SelectItem value="efectivo">Efectivo</SelectItem>
               <SelectItem value="tarjeta">Tarjeta</SelectItem>
               <SelectItem value="transferencia">Transferencia</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={estadoPend}
+            onValueChange={(v) => setEstadoPend(v as EstadoVenta)}
+          >
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="completada">Completada</SelectItem>
+              <SelectItem value="cancelada">Cancelada</SelectItem>
             </SelectContent>
           </Select>
 

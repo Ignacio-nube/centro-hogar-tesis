@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +38,10 @@ export default function ClientesPage() {
   const [searchInput, setSearchInput]     = useState('')
   const [searchApplied, setSearchApplied] = useState('')
 
+  // estado: solo activo / inactivo (sin "todos"). Default: activo
+  const [estadoPend, setEstadoPend] = useState<'activo' | 'inactivo'>('activo')
+  const [estado, setEstado]         = useState<'activo' | 'inactivo'>('activo')
+
   const [page, setPage] = useState(1)
   const [modo, setModo] = useState<Modo>('inicial')
 
@@ -47,11 +52,11 @@ export default function ClientesPage() {
   const pageSize = modo === 'todos' ? PAGE_SIZE_TODOS : PAGE_SIZE_INICIAL
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['clientes', searchApplied, page, modo],
+    queryKey: ['clientes', searchApplied, estado, page, modo],
     queryFn: () =>
       clientesService.list({
         search: searchApplied || undefined,
-        activo: true,
+        activo: estado === 'activo',
         sort: modo === 'todos' ? 'nombre' : 'recientes',
         page,
         pageSize,
@@ -103,6 +108,7 @@ export default function ClientesPage() {
   function buscar() {
     const s = searchInput.trim()
     setSearchApplied(s)
+    setEstado(estadoPend)
     setPage(1)
     if (modo !== 'todos') setModo(s ? 'buscando' : 'inicial')
   }
@@ -116,6 +122,8 @@ export default function ClientesPage() {
     setModo('inicial')
     setSearchInput('')
     setSearchApplied('')
+    setEstadoPend('activo')
+    setEstado('activo')
     setPage(1)
   }
 
@@ -244,6 +252,16 @@ export default function ClientesPage() {
             onKeyDown={(e) => { if (e.key === 'Enter') buscar() }}
           />
         </div>
+
+        <Select value={estadoPend} onValueChange={(v) => setEstadoPend(v as 'activo' | 'inactivo')}>
+          <SelectTrigger className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="activo">Activos</SelectItem>
+            <SelectItem value="inactivo">Inactivos</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Button size="sm" onClick={buscar}>
           <Search className="size-3.5 mr-1.5" />
