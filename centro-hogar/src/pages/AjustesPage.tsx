@@ -28,7 +28,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { DataTable, type Column } from '@/components/common/DataTable'
 import { productosService } from '@/features/productos/services/productosService'
-import { downloadBackup, downloadBackupExcel } from '@/features/backup/backupService'
+import { downloadBackup, downloadBackupExcel, triggerDownload } from '@/features/backup/backupService'
 import { adminService } from '@/features/admin/adminService'
 import { QueryErrorState } from '@/components/ui/query-error-state'
 import { formatCurrency } from '@/lib/utils'
@@ -248,6 +248,7 @@ function PurgeOldSalesSection() {
   const [years, setYears] = useState<number>(2)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmText, setConfirmText] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
 
   const previewQuery = useQuery({
     queryKey: ['admin-purge-preview', years],
@@ -278,7 +279,27 @@ function PurgeOldSalesSection() {
   const fechaCorte  = preview?.fecha_corte ? preview.fecha_corte.slice(0, 10) : '—'
   const fechaAntigua = preview?.fecha_mas_antigua ? preview.fecha_mas_antigua.slice(0, 10) : '—'
 
-  const canConfirm = confirmText.trim().toUpperCase() === 'ELIMINAR' && !purgeMutation.isPending
+  const busy = isExporting || purgeMutation.isPending
+  const canConfirm = confirmText.trim().toUpperCase() === 'ELIMINAR' && !busy
+
+  // Primero descarga la copia en Excel; sólo si eso sale OK, ejecuta el borrado.
+  async function handleConfirmarEliminar() {
+    setIsExporting(true)
+    try {
+      const { blob, filename } = await adminService.exportPurgeOldSales(years)
+      triggerDownload(blob, filename ?? `ventas-eliminadas-${new Date().toISOString().slice(0, 10)}.xlsx`)
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? `No se pudo generar la copia: ${err.message}. No se eliminó nada.`
+          : 'No se pudo generar la copia. No se eliminó nada.',
+      )
+      setIsExporting(false)
+      return
+    }
+    setIsExporting(false)
+    purgeMutation.mutate(years)
+  }
 
   return (
     <Card className="border-destructive/30">
@@ -361,7 +382,7 @@ function PurgeOldSalesSection() {
       {/* Diálogo de confirmación con doble validación: hay que escribir "ELIMINAR" */}
       <Dialog
         open={confirmOpen}
-        onOpenChange={(v) => { if (!purgeMutation.isPending) { setConfirmOpen(v); if (!v) setConfirmText('') } }}
+        onOpenChange={(v) => { if (!busy) { setConfirmOpen(v); if (!v) setConfirmText('') } }}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -377,7 +398,9 @@ function PurgeOldSalesSection() {
               {' '}por un total de <span className="font-bold">{formatCurrency(preview?.monto_total ?? 0)}</span>.
             </p>
             <p className="text-muted-foreground">
-              Esta operación no se puede deshacer. Asegurate de tener una copia de seguridad.
+              Se descargará automáticamente una copia en Excel de estas ventas
+              (con su detalle) y recién después se eliminarán. Esta operación no
+              se puede deshacer.
             </p>
             <div className="flex flex-col gap-1.5 pt-2">
               <Label htmlFor="confirm-text">
@@ -393,15 +416,19 @@ function PurgeOldSalesSection() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={purgeMutation.isPending}>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={busy}>
               Cancelar
             </Button>
             <Button
               variant="destructive"
               disabled={!canConfirm}
-              onClick={() => purgeMutation.mutate(years)}
+              onClick={handleConfirmarEliminar}
             >
-              {purgeMutation.isPending ? 'Eliminando...' : 'Eliminar definitivamente'}
+              {isExporting
+                ? 'Generando copia...'
+                : purgeMutation.isPending
+                  ? 'Eliminando...'
+                  : 'Eliminar definitivamente'}
             </Button>
           </DialogFooter>
         </DialogContent>

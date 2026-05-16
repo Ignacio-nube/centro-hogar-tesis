@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express'
 import { adminService } from '../services/admin.service'
+import { buildWorkbook } from '../services/excel.service'
 import * as r from '../utils/response'
 
 function parseYears(value: unknown): number | null {
@@ -18,6 +19,27 @@ export const adminController = {
     }
     const data = await adminService.previewPurgeOldSales(years)
     r.ok(res, { years, ...data })
+  },
+
+  async exportPurgeOldSales(req: Request, res: Response): Promise<void> {
+    const years = parseYears(req.query['years'] ?? 2)
+    if (years === null) {
+      r.badRequest(res, 'Parámetro "years" inválido (debe ser entero entre 1 y 50)')
+      return
+    }
+    const tables = await adminService.getPurgeExportData(years)
+    const buffer = await buildWorkbook(tables)
+    const fecha  = new Date().toISOString().slice(0, 10)
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="ventas-eliminadas-${fecha}.xlsx"`,
+    )
+    res.send(buffer)
   },
 
   async purgeOldSales(req: Request, res: Response): Promise<void> {

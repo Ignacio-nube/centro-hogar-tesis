@@ -9,6 +9,7 @@ const router = Router()
 router.use(authMiddleware, soloAdmin)
 
 router.get ('/purge-old-sales/preview', ah(adminController.previewPurgeOldSales))
+router.get ('/purge-old-sales/export',  ah(adminController.exportPurgeOldSales))
 router.post('/purge-old-sales',         ah(adminController.purgeOldSales))
 
 export default router

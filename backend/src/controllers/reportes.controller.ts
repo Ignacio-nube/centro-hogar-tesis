@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express'
 import { reportesService } from '../services/reportes.service'
 import { getReportePeriodoData } from '../services/reporte-periodo.service'
-import { buildWorkbook } from './backup.controller'
+import { buildWorkbook } from '../services/excel.service'
 import * as r from '../utils/response'
 
 function getDateRange(req: Request): { fechaDesde: string; fechaHasta: string } {
@@ -61,7 +61,7 @@ export const reportesController = {
   async excelPeriodo(req: Request, res: Response): Promise<void> {
     const { fechaDesde, fechaHasta } = getDateRange(req)
     const tables = await getReportePeriodoData(fechaDesde, fechaHasta)
-    const buffer = buildWorkbook(tables)
+    const buffer = await buildWorkbook(tables)
 
     const desdeStr = fechaDesde.slice(0, 10)
     const hastaStr = fechaHasta.slice(0, 10)

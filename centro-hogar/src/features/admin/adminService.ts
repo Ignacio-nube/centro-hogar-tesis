@@ -22,4 +22,9 @@ export const adminService = {
   async purgeOldSales(years: number): Promise<PurgeResult> {
     return api.post<PurgeResult>('/admin/purge-old-sales', { years })
   },
+
+  /** Descarga el Excel con las ventas que se van a purgar (no borra nada). */
+  async exportPurgeOldSales(years: number): Promise<{ blob: Blob; filename: string | null }> {
+    return api.download(`/admin/purge-old-sales/export?years=${years}`)
+  },
 }
