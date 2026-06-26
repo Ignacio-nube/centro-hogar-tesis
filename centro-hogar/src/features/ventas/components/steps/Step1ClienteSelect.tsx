@@ -17,20 +17,25 @@ interface Step1Props {
 
 export function Step1ClienteSelect({ onSelect, onSkip }: Step1Props) {
   const qc = useQueryClient()
-  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchApplied, setSearchApplied] = useState('')
   const [newClienteOpen, setNewClienteOpen] = useState(false)
 
   // QueryKey compartida con prefix ['clientes', ...] para que la invalidación
   // desde /clientes (o desde aquí mismo al crear) refresque ambos cachés.
   const { data: clientes, isLoading, isError, refetch } = useQuery({
-    queryKey: ['clientes', 'wizard', search],
+    queryKey: ['clientes', 'wizard', searchApplied],
     queryFn: () =>
-      search.length >= 2
-        ? clientesService.search(search)
+      searchApplied.length >= 2
+        ? clientesService.search(searchApplied)
         : clientesService.list({ pageSize: 8, sort: 'recientes', activo: true }).then((r) => r.data),
-    staleTime: search.length >= 2 ? 0 : 1000 * 60 * 5,
+    staleTime: searchApplied.length >= 2 ? 0 : 1000 * 60 * 5,
     enabled: true,
   })
+
+  function buscar() {
+    setSearchApplied(searchInput.trim())
+  }
 
   const handleNewCliente = useCallback(
     (cliente?: Cliente) => {
@@ -40,22 +45,29 @@ export function Step1ClienteSelect({ onSelect, onSkip }: Step1Props) {
     [qc, onSelect]
   )
 
-  const isSearching = search.length >= 2
+  const isSearching = searchApplied.length >= 2
 
   return (
     <div className="flex gap-6 w-full">
       {/* Left: search + list (~65%) */}
       <div className="flex flex-col gap-4 flex-1 min-w-0">
         {/* Search bar */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nombre, DNI..."
-            className="pl-10"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            autoFocus
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nombre, DNI... (Enter para buscar)"
+              className="pl-10"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') buscar() }}
+              autoFocus
+            />
+          </div>
+          <Button type="button" onClick={buscar} className="shrink-0">
+            <Search className="size-4 mr-1.5" />
+            Buscar
+          </Button>
         </div>
 
         {/* List label */}

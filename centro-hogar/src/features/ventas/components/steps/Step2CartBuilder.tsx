@@ -27,13 +27,18 @@ export function Step2CartBuilder({
   onNext,
   subtotal,
 }: Step2Props) {
-  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchApplied, setSearchApplied] = useState('')
 
   const { data: productos, isLoading, isError, refetch } = useQuery({
-    queryKey: ['productos-search', search],
+    queryKey: ['productos-search', searchApplied],
     queryFn: () =>
-      productosService.list({ search, soloActivos: true, conStock: true, pageSize: 8 }).then((r) => r.data),
+      productosService.list({ search: searchApplied, soloActivos: true, conStock: true, pageSize: 8 }).then((r) => r.data),
   })
+
+  function buscar() {
+    setSearchApplied(searchInput.trim())
+  }
 
   function handleAdd(producto: Producto) {
     const existing = getCartItem(producto.id)
@@ -57,15 +62,22 @@ export function Step2CartBuilder({
       {/* Left: product catalog */}
       <div className="flex flex-col gap-3 flex-1 min-w-0">
         {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nombre o código..."
-            className="pl-10"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            autoFocus
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nombre o código... (Enter para buscar)"
+              className="pl-10"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') buscar() }}
+              autoFocus
+            />
+          </div>
+          <Button type="button" onClick={buscar} className="shrink-0">
+            <Search className="size-4 mr-1.5" />
+            Buscar
+          </Button>
         </div>
 
         {/* Catalog label */}

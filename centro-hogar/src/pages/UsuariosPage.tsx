@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Search, List } from 'lucide-react'
+import { Plus, Pencil, Search, List, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,7 @@ import { DataTable, type Column } from '@/components/common/DataTable'
 import { PaginationControls } from '@/components/common/PaginationControls'
 import { RoleBadge } from '@/components/common/RoleBadge'
 import { UsuarioDialog } from '@/features/usuarios/components/UsuarioDialog'
+import { ResetPasswordDialog } from '@/features/usuarios/components/ResetPasswordDialog'
 import { authService } from '@/features/auth/services/authService'
 import { formatDate } from '@/lib/utils'
 import { QueryErrorState } from '@/components/ui/query-error-state'
@@ -25,6 +26,7 @@ export default function UsuariosPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<Profile | null>(null)
+  const [resetUser, setResetUser] = useState<Profile | null>(null)
 
   const [searchInput, setSearchInput]     = useState('')
   const [searchApplied, setSearchApplied] = useState('')
@@ -125,6 +127,16 @@ export default function UsuariosPage() {
             variant="ghost"
             size="icon"
             className="size-8"
+            title="Restablecer contraseña"
+            onClick={(e) => { e.stopPropagation(); setResetUser(u) }}
+          >
+            <KeyRound className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            title="Editar usuario"
             onClick={(e) => { e.stopPropagation(); setEditingUser(u); setDialogOpen(true) }}
           >
             <Pencil className="size-3.5" />
@@ -216,6 +228,12 @@ export default function UsuariosPage() {
         onOpenChange={(v) => { setDialogOpen(v); if (!v) setEditingUser(null) }}
         usuario={editingUser}
         onSuccess={() => { qc.invalidateQueries({ queryKey: ['usuarios'] }); setDialogOpen(false) }}
+      />
+
+      <ResetPasswordDialog
+        open={!!resetUser}
+        onOpenChange={(v) => { if (!v) setResetUser(null) }}
+        usuario={resetUser}
       />
     </div>
   )

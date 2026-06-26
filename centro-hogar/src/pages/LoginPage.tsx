@@ -4,6 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
 
 export default function LoginPage() {
@@ -11,6 +18,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -74,10 +82,34 @@ export default function LoginPage() {
               <Button type="submit" className="w-full mt-2" disabled={isLoading}>
                 {isLoading ? 'Ingresando...' : 'Ingresar'}
               </Button>
+              <button
+                type="button"
+                onClick={() => setForgotOpen(true)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
             </form>
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Recuperar acceso</DialogTitle>
+            <DialogDescription className="leading-relaxed pt-1">
+              Por seguridad, el restablecimiento de contraseña lo realiza un
+              administrador. Pedí a un administrador del sistema que restablezca
+              tu contraseña desde la sección <span className="font-medium">Usuarios</span> y te
+              entregue una contraseña temporal.
+            </DialogDescription>
+          </DialogHeader>
+          <Button onClick={() => setForgotOpen(false)} className="w-full">
+            Entendido
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
